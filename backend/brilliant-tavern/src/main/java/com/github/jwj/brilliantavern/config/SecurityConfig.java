@@ -65,6 +65,13 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/test/public").permitAll()
+                        // Swagger UI 相关路径
+                        .requestMatchers("/swagger-ui/**").permitAll()
+                        .requestMatchers("/swagger-ui.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/swagger-resources/**").permitAll()
+                        .requestMatchers("/webjars/**").permitAll()
                         // 明确拒绝已知的恶意请求路径，避免进入认证流程
                         .requestMatchers("/dynamicParam/**").denyAll()
                         .anyRequest().authenticated()

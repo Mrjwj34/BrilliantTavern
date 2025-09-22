@@ -55,6 +55,19 @@ app:
     max-file-size: 10MB
     max-request-size: 10MB
 
+# SpringDoc OpenAPI 配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+    default-models-expand-depth: 1
+    default-model-expand-depth: 1
+  show-actuator: false
+
 # 日志配置
 logging:
   level:
