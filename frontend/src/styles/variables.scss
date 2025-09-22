@@ -1,0 +1,61 @@
+// 主要颜色变量 - Claude.ai风格
+$primary-color: #d97706;
+$primary-light: #f59e0b;
+$primary-dark: #92400e;
+$secondary-color: #059669;
+
+// 中性色 - 更精细的灰度系统
+$white: #ffffff;
+$gray-25: #fcfcfc;
+$gray-50: #f9fafb;
+$gray-100: #f3f4f6;
+$gray-200: #e5e7eb;
+$gray-300: #d1d5db;
+$gray-400: #9ca3af;
+$gray-500: #6b7280;
+$gray-600: #4b5563;
+$gray-700: #374151;
+$gray-800: #1f2937;
+$gray-900: #111827;
+
+// 功能色
+$success-color: #059669;
+$warning-color: #d97706;
+$error-color: #dc2626;
+$info-color: #2563eb;
+
+// 背景色
+$background-primary: #ffffff;
+$background-secondary: #f9fafb;
+$background-tertiary: #f3f4f6;
+$background-gradient: linear-gradient(135deg, $primary-color 0%, $secondary-color 100%);
+
+// 文字颜色
+$text-primary: #212121;
+$text-secondary: #757575;
+$text-tertiary: #bdbdbd;
+$text-white: #ffffff;
+
+// 阴影
+$shadow-light: 0 1px 3px rgba(0, 0, 0, 0.1);
+$shadow-medium: 0 4px 6px rgba(0, 0, 0, 0.1);
+$shadow-heavy: 0 10px 15px rgba(0, 0, 0, 0.1);
+
+// 圆角
+$border-radius-sm: 4px;
+$border-radius: 8px;
+$border-radius-lg: 12px;
+$border-radius-xl: 16px;
+
+// 间距
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+$spacing-2xl: 48px;
+
+// 动画时间
+$transition-fast: 0.15s;
+$transition-normal: 0.3s;
+$transition-slow: 0.5s;
