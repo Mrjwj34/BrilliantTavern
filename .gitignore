@@ -1,0 +1,56 @@
+### Java / Spring Boot ###
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+*.ipr
+*.iws
+*.log
+hs_err_pid*
+
+### Maven ###
+.mvn/wrapper/maven-wrapper.jar
+!/.mvn/wrapper/maven-wrapper.properties
+!/.mvn/wrapper/MavenWrapperDownloader.java
+
+### Spring Specific ###
+/*.db
+*.h2.db
+*.mv.db
+*.trace.db
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+*.iws
+*.ipr
+
+### VS Code ###
+.vscode/
+
+### OS files ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+logs/
+*.log
+*.out
+
+### React / Node.js ###
+/frontend/node_modules/
+/frontend/build/
+/frontend/.env.local
+/frontend/.env.development.local
+/frontend/.env.test.local
+/frontend/.env.production.local
+
+### Common Env files ###
+*.env
+*.env.*
+!.env.example
+
+### Others ###
+/backend/brilliant-tavern/target/
