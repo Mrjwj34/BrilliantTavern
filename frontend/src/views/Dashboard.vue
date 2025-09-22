@@ -1,142 +1,261 @@
 <template>
   <div class="dashboard">
-    <!-- 导航栏 -->
-    <header class="dashboard-header">
-      <div class="header-content">
-        <div class="brand">
-          <h1 class="brand-title">BrilliantTavern</h1>
+    <!-- 左侧边栏 -->
+    <aside class="sidebar" :class="{ collapsed: sidebarCollapsed }">
+      <!-- 顶部品牌区域 -->
+      <div class="sidebar-header">
+        <div class="brand-section">
+          <h2 class="brand-title">BrilliantTavern</h2>
         </div>
-        <div class="user-menu">
-          <div class="user-info">
-            <span class="user-name">{{ user?.username }}</span>
-            <div class="user-avatar">
-              {{ user?.username?.charAt(0)?.toUpperCase() }}
-            </div>
-          </div>
-          <button @click="handleLogout" class="logout-btn">
-            退出登录
+        <div class="header-actions">
+          <button @click="toggleTheme" class="theme-toggle-btn" :title="isDarkMode ? '切换到浅色模式' : '切换到深色模式'">
+            <svg v-if="isDarkMode" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
+          <button @click="toggleSidebar" class="sidebar-toggle-btn" :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'rotated': sidebarCollapsed }">
+              <path d="M11 19l-7-7 7-7"/>
+              <path d="M21 19l-7-7 7-7"/>
+            </svg>
           </button>
         </div>
       </div>
-    </header>
 
-    <!-- 主要内容 -->
-    <main class="dashboard-main">
-      <div class="welcome-section">
-        <div class="welcome-card">
-          <div class="welcome-content">
-            <h2 class="welcome-title">
-              欢迎回来，{{ user?.username }}！
-            </h2>
-            <p class="welcome-text">
-              准备好与AI角色开始精彩的对话了吗？选择一个角色开始您的冒险之旅。
-            </p>
-          </div>
-          <div class="welcome-illustration">
-            <div class="illustration-circle">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/>
-                <line x1="16" y1="8" x2="2" y2="22"/>
-                <line x1="17.5" y1="15" x2="9" y2="15"/>
-              </svg>
-            </div>
-          </div>
+      <!-- 导航标签页 -->
+      <div class="sidebar-nav">
+        <div class="nav-tabs">
+          <button 
+            v-for="tab in navTabs" 
+            :key="tab.id"
+            :class="['nav-tab', { active: activeTab === tab.id }]"
+            :title="sidebarCollapsed ? tab.label : ''"
+            @click="setActiveTab(tab.id)"
+          >
+            <svg v-if="tab.id === 'market'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-tab-icon">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <svg v-else-if="tab.id === 'create'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-tab-icon">
+              <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
+              <path d="M19 3v4"/>
+              <path d="M21 5h-4"/>
+            </svg>
+            <svg v-else-if="tab.id === 'voice'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="nav-tab-icon">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <span class="nav-tab-text">{{ tab.label }}</span>
+          </button>
         </div>
       </div>
 
-      <!-- 功能卡片 -->
-      <div class="features-section">
-        <div class="features-grid">
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M16 7h.01"/>
-                <path d="M8 7h.01"/>
-                <path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16z"/>
-                <path d="M12 14s1.5-2 0-2-1.5 2-1.5 2"/>
-              </svg>
-            </div>
-            <h3 class="feature-title">角色市场</h3>
-            <p class="feature-desc">探索丰富的AI角色，找到您喜欢的对话伙伴</p>
-            <button class="feature-btn" disabled>即将开放</button>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-              </svg>
-            </div>
-            <h3 class="feature-title">语音对话</h3>
-            <p class="feature-desc">与AI角色进行自然流畅的语音交互</p>
-            <button class="feature-btn" disabled>即将开放</button>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-              </svg>
-            </div>
-            <h3 class="feature-title">创建角色</h3>
-            <p class="feature-desc">设计专属的AI角色，分享给其他用户</p>
-            <button class="feature-btn" disabled>即将开放</button>
-          </div>
-
-          <div class="feature-card">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-              </svg>
-            </div>
-            <h3 class="feature-title">对话历史</h3>
-            <p class="feature-desc">回顾与AI角色的精彩对话记录</p>
-            <button class="feature-btn" disabled>即将开放</button>
-          </div>
+      <!-- 历史记录区域 -->
+      <div class="sidebar-history">
+        <div class="history-header">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="history-icon">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+            <path d="M3 3v5h5"/>
+            <polyline points="12,7 12,12 16,14"/>
+          </svg>
+          <h3 class="history-title">历史记录</h3>
+        </div>
+        <div class="history-placeholder">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="history-placeholder-icon">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          </svg>
+          <p class="history-placeholder-text">暂无历史记录</p>
         </div>
       </div>
 
-      <!-- 统计信息 -->
-      <div class="stats-section">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value">0</div>
-            <div class="stat-label">对话次数</div>
+      <!-- 用户信息 -->
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <div class="user-avatar">
+            {{ user?.username?.charAt(0)?.toUpperCase() }}
           </div>
-          <div class="stat-card">
-            <div class="stat-value">0</div>
-            <div class="stat-label">使用角色</div>
+          <div class="user-details">
+            <div class="user-name">{{ user?.username }}</div>
+            <div class="user-status">在线</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-value">0</div>
-            <div class="stat-label">创建角色</div>
+          <button @click="handleLogout" class="logout-button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="logout-icon">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16,17 21,12 16,7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右侧工作区 -->
+    <main class="workspace">
+      <!-- 工作区内容 -->
+      <div class="workspace-content">
+        <!-- 欢迎页面 -->
+        <div v-if="activeTab === 'welcome'" class="welcome-view">
+          <div class="welcome-container">
+            <div class="welcome-header">
+              <div class="welcome-content-wrapper">
+                <div class="welcome-icon">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                  </svg>
+                </div>
+                <div class="welcome-text-content">
+                  <h1 class="welcome-title">欢迎使用 BrilliantTavern</h1>
+                  <p class="welcome-subtitle">开始与AI角色的精彩对话之旅</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="welcome-features">
+              <div class="feature-item clickable" @click="setActiveTab('market')">
+                <div class="feature-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">角色市场</h3>
+                  <p class="feature-description">探索丰富多样的AI角色，找到最适合您的对话伙伴</p>
+                </div>
+              </div>
+              
+              <div class="feature-item clickable" @click="setActiveTab('create')">
+                <div class="feature-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
+                    <path d="M19 3v4"/>
+                    <path d="M21 5h-4"/>
+                  </svg>
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">创建角色</h3>
+                  <p class="feature-description">设计独特的AI角色，让想象力成为现实</p>
+                </div>
+              </div>
+              
+              <div class="feature-item clickable" @click="setActiveTab('voice')">
+                <div class="feature-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                </div>
+                <div class="feature-content">
+                  <h3 class="feature-title">语音对话</h3>
+                  <p class="feature-description">体验自然流畅的语音交互，让对话更加生动</p>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ formatDate(user?.createdAt) || '今日' }}</div>
-            <div class="stat-label">加入时间</div>
+        </div>
+
+        <!-- 角色市场页面占位 -->
+        <div v-else-if="activeTab === 'market'" class="placeholder-view">
+          <div class="placeholder-content">
+            <div class="placeholder-icon-wrapper">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+            </div>
+            <h2 class="placeholder-title">角色市场</h2>
+            <p class="placeholder-text">功能开发中，敬请期待</p>
+          </div>
+        </div>
+
+        <!-- 创建角色页面占位 -->
+        <div v-else-if="activeTab === 'create'" class="placeholder-view">
+          <div class="placeholder-content">
+            <div class="placeholder-icon-wrapper">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
+                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
+                <path d="M19 3v4"/>
+                <path d="M21 5h-4"/>
+              </svg>
+            </div>
+            <h2 class="placeholder-title">创建角色</h2>
+            <p class="placeholder-text">功能开发中，敬请期待</p>
+          </div>
+        </div>
+
+        <!-- 语音对话页面占位 -->
+        <div v-else-if="activeTab === 'voice'" class="placeholder-view">
+          <div class="placeholder-content">
+            <div class="placeholder-icon-wrapper">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </div>
+            <h2 class="placeholder-title">语音对话</h2>
+            <p class="placeholder-text">功能开发中，敬请期待</p>
           </div>
         </div>
       </div>
     </main>
   </div>
 </template>
-
 <script>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI } from '@/api'
-import { storage, format, tokenUtils } from '@/utils'
+import { storage, tokenUtils } from '@/utils'
 
 export default {
   name: 'Dashboard',
   setup() {
     const router = useRouter()
     const user = ref(null)
+    const activeTab = ref('welcome')
+    const sidebarCollapsed = ref(false)
+    const isDarkMode = ref(false)
 
-    const formatDate = (date) => {
-      if (!date) return ''
-      return format.date(date, 'YYYY-MM-DD')
+    const navTabs = [
+      { id: 'market', label: '角色市场' },
+      { id: 'create', label: '创建角色' },
+      { id: 'voice', label: '语音对话' }
+    ]
+
+    const setActiveTab = (tabId) => {
+      activeTab.value = tabId
+    }
+
+    const toggleSidebar = () => {
+      sidebarCollapsed.value = !sidebarCollapsed.value
+    }
+
+    const toggleTheme = () => {
+      isDarkMode.value = !isDarkMode.value
+      document.documentElement.setAttribute('data-theme', isDarkMode.value ? 'dark' : 'light')
+      localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
     }
 
     const handleLogout = async () => {
@@ -145,24 +264,19 @@ export default {
       } catch (error) {
         console.error('登出失败:', error)
       } finally {
-        // 清除认证信息
         tokenUtils.clearAuth()
-        // 跳转到登录页
         router.push('/login')
       }
     }
 
     const loadUserInfo = async () => {
       try {
-        // 从本地存储获取用户信息
         const localUser = storage.get('user')
         if (localUser) {
           user.value = localUser
           console.log('已加载本地用户信息:', localUser.username)
         }
 
-        // 尝试从服务器获取最新用户信息（可选）
-        // 注意：这里不强制要求API成功，因为可能没有对应的后端接口
         try {
           if (typeof authAPI.getUserInfo === 'function') {
             const response = await authAPI.getUserInfo()
@@ -171,18 +285,15 @@ export default {
                 ...user.value,
                 ...response.data
               }
-              // 更新本地存储
               storage.set('user', user.value)
               console.log('已更新用户信息从服务器')
             }
           }
         } catch (apiError) {
-          // API调用失败不影响用户信息显示
           console.log('无法从服务器更新用户信息，使用本地数据')
         }
       } catch (error) {
         console.error('加载用户信息失败:', error)
-        // 如果连本地用户信息都获取不到，说明可能有问题
         if (!storage.get('user')) {
           console.error('本地用户信息缺失，清除认证信息')
           tokenUtils.clearAuth()
@@ -191,13 +302,33 @@ export default {
       }
     }
 
+    const initTheme = () => {
+      const savedTheme = localStorage.getItem('theme')
+      if (savedTheme) {
+        isDarkMode.value = savedTheme === 'dark'
+        document.documentElement.setAttribute('data-theme', savedTheme)
+      } else {
+        // 检测系统主题偏好
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        isDarkMode.value = prefersDark
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+      }
+    }
+
     onMounted(() => {
       loadUserInfo()
+      initTheme()
     })
 
     return {
       user,
-      formatDate,
+      activeTab,
+      navTabs,
+      sidebarCollapsed,
+      isDarkMode,
+      setActiveTab,
+      toggleSidebar,
+      toggleTheme,
       handleLogout
     }
   }
@@ -206,291 +337,665 @@ export default {
 
 <style lang="scss" scoped>
 .dashboard {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #fef7e7 0%, #fff5d6 100%);
+  height: 100vh;
+  display: flex;
+  background: var(--background-primary);
+  color: var(--text-primary);
 }
 
-.dashboard-header {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  border-bottom: 1px solid rgba(217, 119, 6, 0.1);
+// 左侧边栏
+.sidebar {
+  width: 280px;
+  background: var(--background-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: all 0.3s ease;
+
+  &.collapsed {
+    width: 60px;
+
+    .brand-title,
+    .nav-tab-text,
+    .user-details,
+    .history-title,
+    .history-placeholder-text {
+      opacity: 0;
+      pointer-events: none;
+      display: none;
+    }
+
+    // 隐藏不需要的功能区域
+    .sidebar-history,
+    .sidebar-footer,
+    .theme-toggle-btn {
+      display: none;
+    }
+
+    .nav-tab {
+      justify-content: center;
+      padding: $spacing-sm;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      
+      &:hover {
+        background: var(--background-tertiary);
+        border-color: var(--border-light);
+        transform: scale(1.05);
+      }
+
+      &.active {
+        background: var(--background-tertiary);
+        border-color: var(--primary-color);
+        box-shadow: var(--shadow-light);
+      }
+    }
+
+    .sidebar-header {
+      padding: $spacing-sm $spacing-xs;
+      justify-content: center;
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      padding: $spacing $spacing-xs $spacing $spacing-xs;
+    }
+    
+    .nav-tabs {
+      gap: $spacing-sm;
+      align-items: center;
+    }
+
+    .brand-section {
+      width: 0;
+      overflow: hidden;
+    }
+
+    .header-actions {
+      width: 100%;
+      justify-content: center;
+      
+      .sidebar-toggle-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        padding: $spacing-sm;
+        
+        &:hover {
+          background: var(--background-tertiary);
+          transform: scale(1.05);
+        }
+      }
+    }
+  }
 }
 
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 24px;
+// 侧边栏头部
+.sidebar-header {
+  padding: $spacing $spacing $spacing-xs $spacing;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 70px;
+  background: var(--background-secondary);
+  border-bottom: none;
+}
+
+.brand-section {
+  flex: 1;
 }
 
 .brand-title {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--primary-color);
   margin: 0;
+  transition: opacity 0.3s ease;
 }
 
-.user-menu {
+.header-actions {
+  display: flex;
+  gap: $spacing-xs;
+}
+
+.theme-toggle-btn,
+.sidebar-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: $spacing-xs;
+  border-radius: $border-radius-sm;
+  transition: all $transition-fast ease;
+
+  &:hover {
+    background: var(--background-tertiary);
+    color: var(--text-primary);
+  }
+  
+  svg {
+    transition: transform 0.3s ease;
+    
+    &.rotated {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.sidebar-nav {
+  padding: $spacing-xs $spacing;
+  border-bottom: none;
+}
+
+.nav-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.nav-tab {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: $spacing-sm;
+  padding: $spacing-sm $spacing;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: $border-radius;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all $transition-fast ease;
+  width: 100%;
+  text-align: left;
+
+  &:hover {
+    background: var(--background-tertiary);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+  }
+
+  &.active {
+    background: var(--background-tertiary);
+    color: var(--primary-color);
+    font-weight: 500;
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-light);
+  }
+}
+
+.nav-tab-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+  transition: opacity 0.3s ease;
+  flex-shrink: 0;
+}
+
+.nav-tab-text {
+  flex: 1;
+  transition: opacity 0.3s ease;
+}
+
+// 历史记录区域
+.sidebar-history {
+  flex: 1;
+  padding: $spacing;
+  overflow-y: auto;
+  border-top: none;
+}
+
+.history-header {
+  margin-bottom: $spacing;
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.history-icon {
+  color: var(--text-secondary);
+  width: 14px;
+  height: 14px;
+}
+
+.history-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  transition: opacity 0.3s ease;
+}
+
+.history-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  gap: $spacing-xs;
+}
+
+.history-placeholder-icon {
+  color: var(--text-tertiary);
+  width: 20px;
+  height: 20px;
+}
+
+.history-placeholder-text {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: 0;
+  transition: opacity 0.3s ease;
+}
+
+// 用户信息
+.sidebar-footer {
+  padding: $spacing;
+  background: var(--background-secondary);
+  border-top: none;
 }
 
 .user-info {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.user-name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
+  gap: $spacing-sm;
+  padding: $spacing-sm;
+  background: var(--background-tertiary);
+  border-radius: $border-radius;
 }
 
 .user-avatar {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--primary-color);
-  color: white;
+  color: var(--text-white);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 14px;
 }
 
-.logout-btn {
-  padding: 0.5rem 1rem;
+.user-details {
+  flex: 1;
+  transition: opacity 0.3s ease;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.user-status {
+  font-size: 12px;
+  color: var(--success-color);
+  line-height: 1.2;
+}
+
+.logout-button {
   background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
+  padding: $spacing-xs;
+  border-radius: $border-radius-sm;
+  transition: all $transition-fast ease;
 
   &:hover {
-    background: #f9fafb;
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+    background: var(--background-primary);
+    color: var(--text-primary);
   }
 }
 
-.dashboard-main {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem;
+.logout-icon {
+  width: 16px;
+  height: 16px;
 }
 
-.welcome-section {
-  margin-bottom: 2.5rem;
-}
-
-.welcome-card {
-  background: white;
-  border-radius: 16px;
-  padding: 2.5rem;
+// 右侧工作区
+.workspace {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(217, 119, 6, 0.1);
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    text-align: center;
-    gap: 2rem;
-  }
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.welcome-content {
+.workspace-content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--background-primary);
+}
+
+// 欢迎页面
+.welcome-view {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-2xl;
+}
+
+.welcome-container {
+  max-width: 600px;
+  width: 100%;
+}
+
+.welcome-header {
+  margin-bottom: $spacing-2xl;
+}
+
+.welcome-content-wrapper {
+  display: flex;
+  align-items: center;
+  gap: $spacing-lg;
+}
+
+.welcome-icon {
+  color: $primary-color;
+  background: rgba($primary-color, 0.1);
+  padding: $spacing-lg;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba($primary-color, 0.15);
+  flex-shrink: 0;
+}
+
+.welcome-text-content {
   flex: 1;
 }
 
 .welcome-title {
-  font-size: 2rem;
-  font-weight: 700;
+  font-size: 2.25rem;
+  font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 0.75rem 0;
-  letter-spacing: -0.5px;
+  margin: 0 0 $spacing-sm 0;
+  line-height: 1.2;
 }
 
-.welcome-text {
-  font-size: 1rem;
+.welcome-subtitle {
+  font-size: 1.125rem;
   color: var(--text-secondary);
-  line-height: 1.6;
-  max-width: 500px;
   margin: 0;
+  line-height: 1.5;
 }
 
-.welcome-illustration {
-  .illustration-circle {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #ea7317 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 8px 24px rgba(217, 119, 6, 0.3);
-    color: white;
-  }
+.welcome-features {
+  margin-bottom: $spacing-2xl;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
 }
 
-.features-section {
-  margin-bottom: 2.5rem;
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-}
-
-.feature-card {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  text-align: center;
-  transition: all 0.2s ease;
-  border: 1px solid rgba(217, 119, 6, 0.1);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: $spacing;
+  text-align: left;
+  padding: $spacing-lg;
+  background: var(--background-secondary);
+  border-radius: $border-radius-lg;
+  border: 1px solid var(--border-light);
+  transition: all $transition-normal ease;
 
   &:hover {
+    background: var(--background-tertiary);
+    border-color: var(--primary-color);
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-    border-color: rgba(217, 119, 6, 0.2);
+    box-shadow: var(--shadow-medium);
+  }
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      background: var(--background-tertiary);
+      border-color: var(--primary-color);
+    }
   }
 }
 
 .feature-icon {
   color: var(--primary-color);
-  margin-bottom: 1rem;
+  background: var(--background-tertiary);
+  padding: $spacing-sm;
+  border-radius: $border-radius;
   display: flex;
+  align-items: center;
   justify-content: center;
+  transition: all $transition-fast ease;
+
+  .feature-item:hover & {
+    background: var(--background-primary);
+    transform: scale(1.05);
+  }
+
+  .feature-item.clickable:hover & {
+    background: var(--background-primary);
+    color: var(--primary-dark);
+  }
+}
+
+.feature-content {
+  flex: 1;
 }
 
 .feature-title {
-  font-size: 1.25rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 $spacing-xs 0;
 }
 
-.feature-desc {
+.feature-description {
   font-size: 0.875rem;
   color: var(--text-secondary);
+  margin: 0;
   line-height: 1.5;
-  margin: 0 0 1.5rem 0;
 }
 
-.feature-btn {
-  padding: 0.75rem 1.5rem;
-  background: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover:not(:disabled) {
-    background: #c2621b;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
-  }
-
-  &:disabled {
-    background: #e5e7eb;
-    color: #9ca3af;
-    cursor: not-allowed;
-  }
+// 占位页面
+.placeholder-view {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing-2xl;
 }
 
-.stats-section {
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.25rem;
-  }
-
-  .stat-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    text-align: center;
-    border: 1px solid rgba(217, 119, 6, 0.1);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  }
-
-  .stat-value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
-  }
-
-  .stat-label {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-  }
+.placeholder-content {
+  text-align: center;
+  max-width: 400px;
 }
 
+.placeholder-icon-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: $spacing-lg;
+}
+
+.placeholder-icon {
+  color: var(--text-tertiary);
+  width: 48px;
+  height: 48px;
+  background: var(--background-tertiary);
+  padding: $spacing-sm;
+  border-radius: 50%;
+}
+
+.placeholder-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 $spacing 0;
+}
+
+.placeholder-text {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+// 响应式设计
 @media (max-width: 768px) {
-  .header-content {
-    padding: 0 1rem;
-    height: 60px;
+  .dashboard {
+    flex-direction: column;
+    height: 100vh;
   }
 
-  .brand-title {
-    font-size: 1.25rem;
+  .sidebar {
+    width: 100%;
+    height: 64px;
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    align-items: center;
   }
 
-  .user-menu {
-    gap: 12px;
+  .sidebar-header {
+    padding: $spacing-sm;
+    flex-shrink: 0;
+    
+    .brand-title {
+      display: none;
+    }
+    
+    .header-actions {
+      gap: $spacing-xs;
+      margin: 0 auto;
+    }
   }
 
-  .user-name {
+  .sidebar-nav {
+    flex: 1;
+    padding: $spacing-sm;
+    
+    .nav-tabs {
+      flex-direction: row;
+      gap: $spacing-xs;
+      align-items: center;
+      justify-content: space-evenly;
+      width: 100%;
+      
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+    
+    .nav-tab {
+      white-space: nowrap;
+      flex: 1;
+      flex-shrink: 0;
+      padding: $spacing-xs $spacing-sm;
+      border-radius: 20px;
+      max-width: calc(100% / 3);
+      min-width: 0;
+      
+      .nav-tab-icon {
+        width: 14px;
+        height: 14px;
+      }
+    }
+  }
+
+  .nav-tab-text {
     display: none;
   }
 
-  .dashboard-main {
-    padding: 1.5rem 1rem;
+  .sidebar-history {
+    display: none;
   }
 
-  .welcome-card {
-    padding: 2rem 1.5rem;
+  .sidebar-footer {
+    padding: $spacing-sm;
+    border-top: none;
+    border-left: none;
+    flex-shrink: 0;
+    
+    .user-info {
+      padding: $spacing-xs;
+    }
+    
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      font-size: 12px;
+    }
+  }
+
+  .user-details {
+    display: none;
+  }
+
+  .workspace {
+    flex: 1;
+    overflow: hidden;
   }
 
   .welcome-title {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
   }
 
-  .illustration-circle {
-    width: 80px !important;
-    height: 80px !important;
+  .welcome-features {
+    gap: $spacing;
   }
 
-  .features-grid {
-    grid-template-columns: 1fr;
+  .feature-item {
+    padding: $spacing;
   }
 
-  .feature-card {
-    padding: 1.5rem;
+  .welcome-actions {
+    flex-direction: column;
   }
-
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
+  
+  // 收起状态下的移动端样式
+  .sidebar.collapsed {
+    width: 100%;
+    height: 56px;
+    
+    .sidebar-header {
+      .brand-section {
+        display: none;
+      }
+      
+      .header-actions {
+        margin: 0 auto;
+      }
+    }
+    
+    .sidebar-nav {
+      .nav-tabs {
+        justify-content: space-evenly;
+      }
+      
+      .nav-tab {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        justify-content: center;
+        flex: none;
+        max-width: 40px;
+      }
+    }
+    
+    .sidebar-footer {
+      .user-info {
+        justify-content: center;
+        
+        .user-avatar {
+          width: 32px;
+          height: 32px;
+        }
+      }
+    }
   }
 }
 </style>

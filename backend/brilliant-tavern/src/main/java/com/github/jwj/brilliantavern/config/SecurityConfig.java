@@ -65,6 +65,8 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        // 明确拒绝已知的恶意请求路径，避免进入认证流程
+                        .requestMatchers("/dynamicParam/**").denyAll()
                         .anyRequest().authenticated()
                 );
 

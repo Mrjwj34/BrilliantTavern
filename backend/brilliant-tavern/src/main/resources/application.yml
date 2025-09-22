@@ -59,7 +59,8 @@ app:
 logging:
   level:
     com.github.jwj.brilliantavern: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
+    '[com.github.jwj.brilliantavern.security.JwtAuthenticationEntryPoint]': INFO  # 减少未授权访问的日志输出
+    '[org.springframework.security]': DEBUG
+    '[org.hibernate.SQL]': DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
