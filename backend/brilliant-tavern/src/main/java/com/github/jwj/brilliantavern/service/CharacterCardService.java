@@ -2,6 +2,7 @@ package com.github.jwj.brilliantavern.service;
 
 import com.github.jwj.brilliantavern.dto.CharacterCardResponse;
 import com.github.jwj.brilliantavern.dto.CreateCharacterCardRequest;
+import com.github.jwj.brilliantavern.dto.LikeResponse;
 import com.github.jwj.brilliantavern.dto.UpdateCharacterCardRequest;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
 import com.github.jwj.brilliantavern.entity.UserLike;
@@ -200,20 +201,22 @@ public class CharacterCardService {
      * 点赞/取消点赞角色卡
      */
     @Transactional
-    public boolean toggleLike(UUID cardId, UUID userId) {
+    public LikeResponse toggleLike(UUID cardId, UUID userId) {
         log.info("切换点赞状态: 角色卡={}, 用户={}", cardId, userId);
 
         // 检查角色卡是否存在且可访问
         CharacterCard card = characterCardRepository.findAccessibleCard(cardId, userId)
                 .orElseThrow(() -> new BusinessException(404, "角色卡不存在或无权限访问"));
 
+        log.info("当前角色卡点赞数: {}", card.getLikesCount());
+        
         boolean isLiked = userLikeRepository.existsByUserIdAndCardId(userId, cardId);
+        log.info("用户当前点赞状态: {}", isLiked);
 
         if (isLiked) {
             // 取消点赞
             userLikeRepository.deleteByUserIdAndCardId(userId, cardId);
-            card.setLikesCount(Math.max(0, card.getLikesCount() - 1));
-            log.info("取消点赞: 角色卡={}, 用户={}", cardId, userId);
+            log.info("删除点赞记录完成");
         } else {
             // 添加点赞
             UserLike like = UserLike.builder()
@@ -221,12 +224,27 @@ public class CharacterCardService {
                     .cardId(cardId)
                     .build();
             userLikeRepository.save(like);
-            card.setLikesCount(card.getLikesCount() + 1);
-            log.info("添加点赞: 角色卡={}, 用户={}", cardId, userId);
+            log.info("添加点赞记录完成");
         }
 
+        // 重新计算实际的点赞数，确保数据一致性
+        int actualLikesCount = (int) userLikeRepository.countByCardId(cardId);
+        log.info("从数据库查询到的实际点赞数: {}", actualLikesCount);
+        
+        int oldCount = card.getLikesCount();
+        card.setLikesCount(actualLikesCount);
         characterCardRepository.save(card);
-        return !isLiked; // 返回新的点赞状态
+        
+        log.info("更新角色卡点赞数: 从{}更新为{}", oldCount, actualLikesCount);
+        
+        boolean newLikedStatus = !isLiked;
+        LikeResponse response = LikeResponse.builder()
+                .isLiked(newLikedStatus)
+                .likesCount(actualLikesCount)
+                .build();
+        
+        log.info("返回响应: isLiked={}, likesCount={}", response.isLiked(), response.getLikesCount());
+        return response;
     }
 
     /**

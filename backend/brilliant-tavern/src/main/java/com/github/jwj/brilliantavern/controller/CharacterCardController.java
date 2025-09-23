@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.controller;
 import com.github.jwj.brilliantavern.dto.ApiResponse;
 import com.github.jwj.brilliantavern.dto.CharacterCardResponse;
 import com.github.jwj.brilliantavern.dto.CreateCharacterCardRequest;
+import com.github.jwj.brilliantavern.dto.LikeResponse;
 import com.github.jwj.brilliantavern.dto.UpdateCharacterCardRequest;
 import com.github.jwj.brilliantavern.security.UserPrincipal;
 import com.github.jwj.brilliantavern.service.CharacterCardService;
@@ -200,15 +201,15 @@ public class CharacterCardController {
      */
     @Operation(summary = "点赞/取消点赞角色卡", description = "切换角色卡的点赞状态")
     @PostMapping("/{cardId}/like")
-    public ResponseEntity<ApiResponse<Boolean>> toggleLike(
+    public ResponseEntity<ApiResponse<LikeResponse>> toggleLike(
             @Parameter(description = "角色卡ID") @PathVariable UUID cardId,
             @AuthenticationPrincipal UserPrincipal userPrincipal) {
         
         log.info("切换点赞状态: 角色卡={}, 用户={}", cardId, userPrincipal.getId());
         
-        boolean isLiked = characterCardService.toggleLike(cardId, userPrincipal.getId());
-        String message = isLiked ? "点赞成功" : "取消点赞成功";
-        return ResponseEntity.ok(ApiResponse.success(message, isLiked));
+        LikeResponse likeResponse = characterCardService.toggleLike(cardId, userPrincipal.getId());
+        String message = likeResponse.isLiked() ? "点赞成功" : "取消点赞成功";
+        return ResponseEntity.ok(ApiResponse.success(message, likeResponse));
     }
 
     /**

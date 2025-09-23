@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS character_cards (
     name VARCHAR(100) NOT NULL,
     short_description TEXT,
     greeting_message TEXT,
+    avatar_url TEXT,
     is_public BOOLEAN NOT NULL DEFAULT FALSE,
     likes_count INTEGER NOT NULL DEFAULT 0,
     tts_voice_id VARCHAR(100),

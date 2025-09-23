@@ -28,6 +28,9 @@ public class UpdateCharacterCardRequest {
     @Size(max = 1000, message = "问候语不能超过1000个字符")
     private String greetingMessage;
 
+    @Size(max = 500, message = "头像URL不能超过500个字符")
+    private String avatarUrl;
+
     private Boolean isPublic;
 
     @Size(max = 100, message = "TTS音色ID不能超过100个字符")
@@ -57,9 +60,6 @@ public class UpdateCharacterCardRequest {
         @Valid
         private ExampleDialogDto[] exampleDialogs;
 
-        @Valid
-        private CustomPromptsDto customPrompts;
-
         @Data
         @Builder
         @NoArgsConstructor
@@ -70,18 +70,6 @@ public class UpdateCharacterCardRequest {
 
             @Size(max = 1000, message = "助手对话示例不能超过1000个字符")
             private String assistant;
-        }
-
-        @Data
-        @Builder
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class CustomPromptsDto {
-            @Size(max = 2000, message = "系统提示前缀不能超过2000个字符")
-            private String systemPromptPrefix;
-
-            @Size(max = 2000, message = "系统提示后缀不能超过2000个字符")
-            private String systemPromptSuffix;
         }
     }
 
@@ -109,14 +97,6 @@ public class UpdateCharacterCardRequest {
                         .build();
             }
             builder.exampleDialogs(dialogs);
-        }
-
-        // 转换自定义提示
-        if (cardData.getCustomPrompts() != null) {
-            builder.customPrompts(CharacterCard.CharacterCardData.CustomPrompts.builder()
-                    .systemPromptPrefix(cardData.getCustomPrompts().getSystemPromptPrefix())
-                    .systemPromptSuffix(cardData.getCustomPrompts().getSystemPromptSuffix())
-                    .build());
         }
 
         return builder.build();

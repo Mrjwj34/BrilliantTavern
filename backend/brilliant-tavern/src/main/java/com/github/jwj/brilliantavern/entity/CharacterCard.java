@@ -55,6 +55,9 @@ public class CharacterCard {
     @Column(name = "tts_voice_id", length = 100)
     private String ttsVoiceId;
 
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "card_data", nullable = false, columnDefinition = "JSONB")
     private CharacterCardData cardData;
@@ -79,7 +82,6 @@ public class CharacterCard {
         private String personality;
         private String scenario;
         private ExampleDialog[] exampleDialogs;
-        private CustomPrompts customPrompts;
 
         @Data
         @Builder
@@ -88,15 +90,6 @@ public class CharacterCard {
         public static class ExampleDialog {
             private String user;
             private String assistant;
-        }
-
-        @Data
-        @Builder
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class CustomPrompts {
-            private String systemPromptPrefix;
-            private String systemPromptSuffix;
         }
     }
 }

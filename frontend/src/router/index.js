@@ -17,7 +17,8 @@ const routes = [
     component: Login,
     meta: {
       title: '登录',
-      requiresAuth: false
+      requiresAuth: false,
+      transition: 'scale'
     }
   },
   {
@@ -26,7 +27,8 @@ const routes = [
     component: Register,
     meta: {
       title: '注册',
-      requiresAuth: false
+      requiresAuth: false,
+      transition: 'slide'
     }
   },
   {
@@ -35,7 +37,8 @@ const routes = [
     component: Dashboard,
     meta: {
       title: '仪表盘',
-      requiresAuth: true
+      requiresAuth: true,
+      transition: 'slide-right'
     }
   },
   {

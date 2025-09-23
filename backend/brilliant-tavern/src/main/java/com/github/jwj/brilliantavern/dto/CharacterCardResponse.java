@@ -44,7 +44,6 @@ public class CharacterCardResponse {
         private String personality;
         private String scenario;
         private ExampleDialogDto[] exampleDialogs;
-        private CustomPromptsDto customPrompts;
 
         @Data
         @Builder
@@ -53,15 +52,6 @@ public class CharacterCardResponse {
         public static class ExampleDialogDto {
             private String user;
             private String assistant;
-        }
-
-        @Data
-        @Builder
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class CustomPromptsDto {
-            private String systemPromptPrefix;
-            private String systemPromptSuffix;
         }
     }
 
@@ -122,14 +112,6 @@ public class CharacterCardResponse {
                         .build();
             }
             builder.exampleDialogs(dialogs);
-        }
-
-        // 转换自定义提示
-        if (cardData.getCustomPrompts() != null) {
-            builder.customPrompts(CharacterCardDataDto.CustomPromptsDto.builder()
-                    .systemPromptPrefix(cardData.getCustomPrompts().getSystemPromptPrefix())
-                    .systemPromptSuffix(cardData.getCustomPrompts().getSystemPromptSuffix())
-                    .build());
         }
 
         return builder.build();

@@ -293,6 +293,7 @@ export default {
   padding: 2.5rem;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
   border: 1px solid rgba(217, 119, 6, 0.1);
+  animation: fadeInUp 0.4s ease-out;
 }
 
 .login-header {
@@ -551,5 +552,37 @@ export default {
   svg {
     opacity: 0.9;
   }
+}
+
+// 动画关键帧
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 为表单元素添加交错动画
+.login-header {
+  animation: fadeInUp 0.4s ease-out 0.05s both;
+}
+
+.form-group {
+  animation: fadeInUp 0.4s ease-out both;
+  
+  &:nth-child(1) { animation-delay: 0.1s; }
+  &:nth-child(2) { animation-delay: 0.15s; }
+}
+
+.login-button {
+  animation: fadeInUp 0.4s ease-out 0.2s both;
+}
+
+.register-link {
+  animation: fadeInUp 0.4s ease-out 0.25s both;
 }
 </style>

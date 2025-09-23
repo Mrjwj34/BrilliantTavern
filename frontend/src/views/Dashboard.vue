@@ -5,7 +5,7 @@
       <!-- 顶部品牌区域 -->
       <div class="sidebar-header">
         <div class="brand-section">
-          <h2 class="brand-title">BrilliantTavern</h2>
+          <h2 class="brand-title clickable" @click="goToWelcome">BrilliantTavern</h2>
         </div>
         <div class="header-actions">
           <button @click="toggleTheme" class="theme-toggle-btn" :title="isDarkMode ? '切换到浅色模式' : '切换到深色模式'">
@@ -108,117 +108,98 @@
     <main class="workspace">
       <!-- 工作区内容 -->
       <div class="workspace-content">
-        <!-- 欢迎页面 -->
-        <div v-if="activeTab === 'welcome'" class="welcome-view">
-          <div class="welcome-container">
-            <div class="welcome-header">
-              <div class="welcome-content-wrapper">
-                <div class="welcome-icon">
-                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                    <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                  </svg>
-                </div>
-                <div class="welcome-text-content">
-                  <h1 class="welcome-title">欢迎使用 BrilliantTavern</h1>
-                  <p class="welcome-subtitle">开始与AI角色的精彩对话之旅</p>
-                </div>
-              </div>
-            </div>
-            
-            <div class="welcome-features">
-              <div class="feature-item clickable" @click="setActiveTab('market')">
-                <div class="feature-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                  </svg>
-                </div>
-                <div class="feature-content">
-                  <h3 class="feature-title">角色市场</h3>
-                  <p class="feature-description">探索丰富多样的AI角色，找到最适合您的对话伙伴</p>
+        <transition name="tab-fade" mode="out-in">
+          <!-- 欢迎页面 -->
+          <div v-if="activeTab === 'welcome'" key="welcome" class="welcome-view" :class="{ 'first-load': isFirstLoad }">
+            <div class="welcome-container">
+              <div class="welcome-header">
+                <div class="welcome-content-wrapper">
+                  <div class="welcome-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                    </svg>
+                  </div>
+                  <div class="welcome-text-content">
+                    <h1 class="welcome-title">欢迎使用 BrilliantTavern</h1>
+                    <p class="welcome-subtitle">开始与AI角色的精彩对话之旅</p>
+                  </div>
                 </div>
               </div>
               
-              <div class="feature-item clickable" @click="setActiveTab('create')">
-                <div class="feature-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
-                    <path d="M19 3v4"/>
-                    <path d="M21 5h-4"/>
-                  </svg>
+              <div class="welcome-features">
+                <div class="feature-item clickable" @click="setActiveTab('market')">
+                  <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                  </div>
+                  <div class="feature-content">
+                    <h3 class="feature-title">角色市场</h3>
+                    <p class="feature-description">探索丰富多样的AI角色，找到最适合您的对话伙伴</p>
+                  </div>
                 </div>
-                <div class="feature-content">
-                  <h3 class="feature-title">创建角色</h3>
-                  <p class="feature-description">设计独特的AI角色，让想象力成为现实</p>
+                
+                <div class="feature-item clickable" @click="setActiveTab('create')">
+                  <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
+                      <path d="M19 3v4"/>
+                      <path d="M21 5h-4"/>
+                    </svg>
+                  </div>
+                  <div class="feature-content">
+                    <h3 class="feature-title">创建角色</h3>
+                    <p class="feature-description">设计独特的AI角色，让想象力成为现实</p>
+                  </div>
+                </div>
+                
+                <div class="feature-item clickable" @click="setActiveTab('voice')">
+                  <div class="feature-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                      <line x1="12" y1="19" x2="12" y2="23"/>
+                      <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                  </div>
+                  <div class="feature-content">
+                    <h3 class="feature-title">语音对话</h3>
+                    <p class="feature-description">体验自然流畅的语音交互，让对话更加生动</p>
+                  </div>
                 </div>
               </div>
-              
-              <div class="feature-item clickable" @click="setActiveTab('voice')">
-                <div class="feature-icon">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                    <line x1="12" y1="19" x2="12" y2="23"/>
-                    <line x1="8" y1="23" x2="16" y2="23"/>
-                  </svg>
-                </div>
-                <div class="feature-content">
-                  <h3 class="feature-title">语音对话</h3>
-                  <p class="feature-description">体验自然流畅的语音交互，让对话更加生动</p>
-                </div>
+            </div>
+          </div>
+
+          <!-- 角色市场页面 -->
+          <div v-else-if="activeTab === 'market'" key="market" class="market-view">
+            <CharacterMarket @create-new="handleCreateNew" />
+          </div>
+
+          <!-- 创建角色页面 -->
+          <div v-else-if="activeTab === 'create'" key="create" class="create-view">
+            <CharacterCreator @created="handleCharacterCreated" />
+          </div>
+
+          <!-- 语音对话页面占位 -->
+          <div v-else-if="activeTab === 'voice'" key="voice" class="placeholder-view">
+            <div class="placeholder-content">
+              <div class="placeholder-icon-wrapper">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
               </div>
+              <h2 class="placeholder-title">语音对话</h2>
+              <p class="placeholder-text">功能开发中，敬请期待</p>
             </div>
           </div>
-        </div>
-
-        <!-- 角色市场页面占位 -->
-        <div v-else-if="activeTab === 'market'" class="placeholder-view">
-          <div class="placeholder-content">
-            <div class="placeholder-icon-wrapper">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-            </div>
-            <h2 class="placeholder-title">角色市场</h2>
-            <p class="placeholder-text">功能开发中，敬请期待</p>
-          </div>
-        </div>
-
-        <!-- 创建角色页面占位 -->
-        <div v-else-if="activeTab === 'create'" class="placeholder-view">
-          <div class="placeholder-content">
-            <div class="placeholder-icon-wrapper">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
-                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0L9.937 15.5Z"/>
-                <path d="M19 3v4"/>
-                <path d="M21 5h-4"/>
-              </svg>
-            </div>
-            <h2 class="placeholder-title">创建角色</h2>
-            <p class="placeholder-text">功能开发中，敬请期待</p>
-          </div>
-        </div>
-
-        <!-- 语音对话页面占位 -->
-        <div v-else-if="activeTab === 'voice'" class="placeholder-view">
-          <div class="placeholder-content">
-            <div class="placeholder-icon-wrapper">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-            </div>
-            <h2 class="placeholder-title">语音对话</h2>
-            <p class="placeholder-text">功能开发中，敬请期待</p>
-          </div>
-        </div>
+        </transition>
       </div>
     </main>
   </div>
@@ -228,15 +209,22 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI } from '@/api'
 import { storage, tokenUtils } from '@/utils'
+import CharacterMarket from '@/components/CharacterMarket.vue'
+import CharacterCreator from '@/components/CharacterCreator.vue'
 
 export default {
   name: 'Dashboard',
+  components: {
+    CharacterMarket,
+    CharacterCreator
+  },
   setup() {
     const router = useRouter()
     const user = ref(null)
     const activeTab = ref('welcome')
     const sidebarCollapsed = ref(false)
     const isDarkMode = ref(false)
+    const isFirstLoad = ref(true) // 标记首次加载
 
     const navTabs = [
       { id: 'market', label: '角色市场' },
@@ -246,6 +234,10 @@ export default {
 
     const setActiveTab = (tabId) => {
       activeTab.value = tabId
+      // 切换标签页后，标记不再是首次加载
+      if (isFirstLoad.value) {
+        isFirstLoad.value = false
+      }
     }
 
     const toggleSidebar = () => {
@@ -315,6 +307,21 @@ export default {
       }
     }
 
+    const handleCharacterCreated = (character) => {
+      console.log('角色创建成功:', character)
+      // 创建成功后切换到角色市场
+      setActiveTab('market')
+      // TODO: 显示成功提示
+    }
+
+    const handleCreateNew = () => {
+      setActiveTab('create')
+    }
+
+    const goToWelcome = () => {
+      activeTab.value = 'welcome'
+    }
+
     onMounted(() => {
       loadUserInfo()
       initTheme()
@@ -326,10 +333,14 @@ export default {
       navTabs,
       sidebarCollapsed,
       isDarkMode,
+      isFirstLoad,
       setActiveTab,
       toggleSidebar,
       toggleTheme,
-      handleLogout
+      handleLogout,
+      handleCharacterCreated,
+      handleCreateNew,
+      goToWelcome
     }
   }
 }
@@ -455,6 +466,16 @@ export default {
   color: var(--primary-color);
   margin: 0;
   transition: opacity 0.3s ease;
+  
+  &.clickable {
+    cursor: pointer;
+    transition: color 0.3s ease, opacity 0.3s ease;
+    
+    &:hover {
+      color: #f59e0b; /* 使用温暖的黄色作为hover状态 */
+      opacity: 0.9;
+    }
+  }
 }
 
 .header-actions {
@@ -810,6 +831,14 @@ export default {
   padding: $spacing-2xl;
 }
 
+// 新页面样式
+.market-view,
+.create-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 .placeholder-content {
   text-align: center;
   max-width: 400px;
@@ -997,5 +1026,39 @@ export default {
       }
     }
   }
+}
+
+// 标签页切换过渡动画
+.tab-fade-enter-active,
+.tab-fade-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.tab-fade-enter-from {
+  opacity: 0;
+}
+
+.tab-fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// 为功能卡片添加延迟动画（仅在页面首次加载时触发）
+.welcome-view.first-load .feature-item {
+  animation: fadeInUp 0.3s ease-out;
+  
+  &:nth-child(1) { animation-delay: 0.05s; }
+  &:nth-child(2) { animation-delay: 0.1s; }
+  &:nth-child(3) { animation-delay: 0.15s; }
 }
 </style>

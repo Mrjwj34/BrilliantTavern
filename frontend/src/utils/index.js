@@ -71,6 +71,16 @@ export const validation = {
   // 验证必填项
   isRequired(value) {
     return value !== null && value !== undefined && value !== ''
+  },
+
+  // 验证URL
+  isUrl(url) {
+    try {
+      new URL(url)
+      return true
+    } catch {
+      return false
+    }
   }
 }
 

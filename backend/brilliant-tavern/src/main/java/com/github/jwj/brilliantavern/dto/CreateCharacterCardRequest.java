@@ -27,6 +27,7 @@ public class CreateCharacterCardRequest {
     private String name;
 
     @Schema(description = "简短描述", example = "古希腊哲学家，智慧的化身")
+    @NotBlank(message = "简短描述不能为空")
     @Size(max = 500, message = "简短描述不能超过500个字符")
     private String shortDescription;
 
@@ -41,6 +42,10 @@ public class CreateCharacterCardRequest {
     @Schema(description = "TTS音色ID", example = "zh-CN-XiaoxiaoNeural")
     @Size(max = 100, message = "TTS音色ID不能超过100个字符")
     private String ttsVoiceId;
+
+    @Schema(description = "角色头像URL", example = "https://example.com/avatar.jpg")
+    @Size(max = 500, message = "头像URL不能超过500个字符")
+    private String avatarUrl;
 
     @Schema(description = "角色卡详细数据")
     @Valid
@@ -74,10 +79,6 @@ public class CreateCharacterCardRequest {
         @Schema(description = "示例对话")
         @Valid
         private ExampleDialogDto[] exampleDialogs;
-
-        @Schema(description = "自定义提示")
-        @Valid
-        private CustomPromptsDto customPrompts;
 
         @Schema(description = "示例对话")
         @Data
@@ -132,14 +133,6 @@ public class CreateCharacterCardRequest {
                         .build();
             }
             builder.exampleDialogs(dialogs);
-        }
-
-        // 转换自定义提示
-        if (cardData.getCustomPrompts() != null) {
-            builder.customPrompts(CharacterCard.CharacterCardData.CustomPrompts.builder()
-                    .systemPromptPrefix(cardData.getCustomPrompts().getSystemPromptPrefix())
-                    .systemPromptSuffix(cardData.getCustomPrompts().getSystemPromptSuffix())
-                    .build());
         }
 
         return builder.build();
