@@ -54,3 +54,4 @@ logs/
 
 ### Others ###
 /backend/brilliant-tavern/target/
+/backend/brilliant-tavern/uploads/

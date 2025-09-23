@@ -155,13 +155,14 @@
                   <div class="avatar-edit-section">
                     <!-- 头像预览 -->
                     <div class="avatar-preview">
-                      <div class="avatar-container" :class="{ 'has-image': editForm.avatarUrl, 'uploading': uploadingAvatar }">
+                      <div class="avatar-container" :class="{ 'has-image': editForm.avatarUrl || selectedCard?.avatarUrl, 'uploading': uploadingAvatar }">
                         <div v-if="uploadingAvatar" class="uploading-overlay">
                           <div class="upload-spinner"></div>
                           <span class="upload-text">上传中...</span>
                         </div>
-                        <img v-else-if="editForm.avatarUrl" 
-                             :src="editForm.avatarUrl" 
+                        <!-- 显示编辑中的头像或原有头像 -->
+                        <img v-else-if="editForm.avatarUrl || selectedCard?.avatarUrl" 
+                             :src="editForm.avatarUrl || selectedCard?.avatarUrl" 
                              alt="角色头像" 
                              class="avatar-image" />
                         <div v-else class="avatar-placeholder">
@@ -176,32 +177,43 @@
                     
                     <!-- 上传和URL输入 -->
                     <div class="avatar-controls">
-                      <!-- 文件上传 -->
+                      <!-- 上传按钮状态 -->
                       <div class="upload-section">
                         <input ref="avatarFileInput" 
                                type="file" 
                                accept="image/*" 
                                @change="handleAvatarFileSelect"
+                               :disabled="uploadedAvatarMode === 'url'"
                                style="display: none;" />
-                        <button type="button" @click="triggerAvatarFileInput" class="upload-btn">
+                        <button type="button" 
+                                @click="triggerAvatarFileInput" 
+                                :disabled="uploadedAvatarMode === 'url'"
+                                :class="{ 'disabled': uploadedAvatarMode === 'url' }"
+                                class="upload-btn">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M17 8L12 3L7 8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M12 3V15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
-                          上传图片
+                          {{ uploadedAvatarMode === 'url' ? '上传已禁用（使用了链接）' : '上传图片' }}
                         </button>
                       </div>
                       
                       <!-- URL输入 -->
                       <div class="url-input-section">
                         <input 
-                          v-model="editForm.avatarUrl"
+                          v-model="displayedEditAvatarUrl"
                           type="url"
                           class="form-input"
+                          :class="{ 'disabled': uploadedAvatarMode === 'uploaded' }"
+                          :disabled="uploadedAvatarMode === 'uploaded'"
+                          :readonly="uploadedAvatarMode === 'uploaded'"
                           placeholder="或输入图片链接"
                           maxlength="500"
                         />
+                        <span v-if="uploadedAvatarMode === 'uploaded'" class="input-disabled-hint">
+                          （已有上传文件，链接输入已禁用）
+                        </span>
                       </div>
                       
                       <!-- 清除按钮 -->
@@ -438,6 +450,28 @@ export default {
     const saving = ref(false) // 保存状态
     const uploadingAvatar = ref(false) // 头像上传状态
     const avatarFileInput = ref(null) // 文件输入引用
+    const uploadedAvatarMode = ref('') // 'uploaded' | 'url' | ''
+    
+    // 显示的头像URL - 编辑模式下的逻辑
+    const displayedEditAvatarUrl = computed({
+      get() {
+        // 编辑模式下URL输入框始终为空，不显示原有URL（安全考虑）
+        // 除非用户手动输入了新的URL
+        if (uploadedAvatarMode.value === 'uploaded') {
+          return '' // 上传模式下不显示URL
+        }
+        if (uploadedAvatarMode.value === 'url') {
+          return editForm.avatarUrl // 用户输入的新URL
+        }
+        return '' // 默认为空，不显示原有URL
+      },
+      set(value) {
+        if (uploadedAvatarMode.value !== 'uploaded') {
+          editForm.avatarUrl = value
+          uploadedAvatarMode.value = value ? 'url' : ''
+        }
+      }
+    })
     const editForm = reactive({
       name: '',
       shortDescription: '',
@@ -644,7 +678,11 @@ export default {
       editForm.greetingMessage = card.greetingMessage || ''
       editForm.isPublic = card.isPublic !== undefined ? card.isPublic : true
       editForm.ttsVoiceId = card.ttsVoiceId || ''
-      editForm.avatarUrl = card.avatarUrl || '' // 新增头像URL初始化
+      // 保留原有头像URL用于显示
+      editForm.avatarUrl = card.avatarUrl || ''
+      
+      // 重置上传状态
+      uploadedAvatarMode.value = ''
       
       // 初始化cardData
       const cardData = card.cardData || {}
@@ -890,6 +928,7 @@ export default {
         
         if (response && response.code === 200) {
           editForm.avatarUrl = response.data.url
+          uploadedAvatarMode.value = 'uploaded' // 设置为上传模式
         } else {
           console.error(response.message || '头像上传失败')
         }
@@ -902,6 +941,7 @@ export default {
 
     const clearAvatar = () => {
       editForm.avatarUrl = ''
+      uploadedAvatarMode.value = ''
       if (avatarFileInput.value) {
         avatarFileInput.value.value = ''
       }
@@ -941,6 +981,8 @@ export default {
       // 头像相关
       uploadingAvatar,
       avatarFileInput,
+      uploadedAvatarMode,
+      displayedEditAvatarUrl,
       triggerAvatarFileInput,
       handleAvatarFileSelect,
       clearAvatar
@@ -1804,9 +1846,16 @@ export default {
   cursor: pointer;
   transition: all 0.2s;
 
-  &:hover {
+  &:hover:not(.disabled) {
     background: var(--background-primary);
     border-color: var(--primary-color);
+  }
+
+  &.disabled {
+    background: var(--background-tertiary);
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+    opacity: 0.6;
   }
 
   svg {
@@ -1835,6 +1884,21 @@ export default {
     border-color: var(--error-color);
     background: rgba(239, 68, 68, 0.05);
   }
+}
+
+/* 头像编辑相关禁用状态样式 */
+.form-input.disabled {
+  background: var(--background-tertiary);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.input-disabled-hint {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin-top: 0.25rem;
 }
 
 @media (max-width: 768px) {

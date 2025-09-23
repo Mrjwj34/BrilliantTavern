@@ -124,11 +124,12 @@
                   <span v-if="uploadedImage === 'uploaded'" class="input-disabled-hint">（已有上传文件，链接输入已禁用）</span>
                 </label>
                 <input
-                  v-model="formData.avatarUrl"
+                  v-model="displayedAvatarUrl"
                   type="url"
                   class="form-input"
                   :class="{ 'error': errors.avatarUrl, 'disabled': uploadedImage === 'uploaded' }"
                   :disabled="uploadedImage === 'uploaded'"
+                  :readonly="uploadedImage === 'uploaded'"
                   placeholder="https://example.com/avatar.jpg"
                   maxlength="500"
                   @blur="validateField('avatarUrl')"
@@ -438,6 +439,17 @@ export default {
              formData.cardData.description.trim() &&
              formData.cardData.personality.trim() &&
              Object.keys(errors.value).length === 0
+    })
+
+    // 显示的头像URL - 上传文件时不显示URL
+    const displayedAvatarUrl = computed({
+      get() {
+        // 如果是上传的文件，不显示URL
+        return uploadedImage.value === 'uploaded' ? '' : formData.avatarUrl
+      },
+      set(value) {
+        formData.avatarUrl = value
+      }
     })
 
     // 验证字段
@@ -841,6 +853,7 @@ export default {
       errors,
       loading,
       isFormValid,
+      displayedAvatarUrl,
       availableVoices,
       isDragOver,
       uploadedImage,
