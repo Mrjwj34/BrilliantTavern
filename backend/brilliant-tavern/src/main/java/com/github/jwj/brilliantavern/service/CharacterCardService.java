@@ -43,6 +43,7 @@ public class CharacterCardService {
                 .greetingMessage(request.getGreetingMessage())
                 .isPublic(request.getIsPublic())
                 .ttsVoiceId(request.getTtsVoiceId())
+                .avatarUrl(request.getAvatarUrl())
                 .cardData(request.toCardData())
                 .build();
 
@@ -82,6 +83,9 @@ public class CharacterCardService {
         }
         if (request.getTtsVoiceId() != null) {
             card.setTtsVoiceId(request.getTtsVoiceId());
+        }
+        if (request.getAvatarUrl() != null) {
+            card.setAvatarUrl(request.getAvatarUrl());
         }
         if (request.getCardData() != null) {
             card.setCardData(request.toCardData());

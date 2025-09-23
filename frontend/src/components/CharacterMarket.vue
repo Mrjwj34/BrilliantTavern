@@ -149,6 +149,89 @@
               <div class="form-section">
                 <div class="section-title">基础信息</div>
                 
+                <!-- 头像编辑 -->
+                <div class="form-group" v-if="editMode">
+                  <label>角色头像</label>
+                  <div class="avatar-edit-section">
+                    <!-- 头像预览 -->
+                    <div class="avatar-preview">
+                      <div class="avatar-container" :class="{ 'has-image': editForm.avatarUrl, 'uploading': uploadingAvatar }">
+                        <div v-if="uploadingAvatar" class="uploading-overlay">
+                          <div class="upload-spinner"></div>
+                          <span class="upload-text">上传中...</span>
+                        </div>
+                        <img v-else-if="editForm.avatarUrl" 
+                             :src="editForm.avatarUrl" 
+                             alt="角色头像" 
+                             class="avatar-image" />
+                        <div v-else class="avatar-placeholder">
+                          <svg class="avatar-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M20.5899 22C20.5899 18.13 16.7399 15 11.9999 15C7.25991 15 3.40991 18.13 3.40991 22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                          </svg>
+                          <span class="avatar-text">头像</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- 上传和URL输入 -->
+                    <div class="avatar-controls">
+                      <!-- 文件上传 -->
+                      <div class="upload-section">
+                        <input ref="avatarFileInput" 
+                               type="file" 
+                               accept="image/*" 
+                               @change="handleAvatarFileSelect"
+                               style="display: none;" />
+                        <button type="button" @click="triggerAvatarFileInput" class="upload-btn">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M17 8L12 3L7 8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M12 3V15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                          上传图片
+                        </button>
+                      </div>
+                      
+                      <!-- URL输入 -->
+                      <div class="url-input-section">
+                        <input 
+                          v-model="editForm.avatarUrl"
+                          type="url"
+                          class="form-input"
+                          placeholder="或输入图片链接"
+                          maxlength="500"
+                        />
+                      </div>
+                      
+                      <!-- 清除按钮 -->
+                      <button v-if="editForm.avatarUrl" type="button" @click="clearAvatar" class="clear-avatar-btn">
+                        清除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- 只读模式显示头像 -->
+                <div class="form-group" v-else>
+                  <label>角色头像</label>
+                  <div class="avatar-display">
+                    <div class="avatar-container" :class="{ 'has-image': selectedCard?.avatarUrl }">
+                      <img v-if="selectedCard?.avatarUrl" 
+                           :src="selectedCard.avatarUrl" 
+                           alt="角色头像" 
+                           class="avatar-image" />
+                      <div v-else class="avatar-placeholder">
+                        <svg class="avatar-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" stroke="currentColor" stroke-width="2"/>
+                          <path d="M20.5899 22C20.5899 18.13 16.7399 15 11.9999 15C7.25991 15 3.40991 18.13 3.40991 22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                        <span class="avatar-text">无头像</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
                 <div class="form-group">
                   <label>角色名称</label>
                   <input 
@@ -295,33 +378,6 @@
                 </div>
               </div>
               
-              <!-- 自定义提示词 -->
-              <div class="form-section" v-if="editMode">
-                <div class="section-title">自定义提示词</div>
-                
-                <div class="form-group">
-                  <label>系统提示词前缀</label>
-                  <textarea 
-                    v-model="editForm.cardData.customPrompts.systemPromptPrefix" 
-                    class="form-textarea"
-                    placeholder="输入系统提示词前缀（可选）"
-                    rows="3"
-                    maxlength="2000"
-                  ></textarea>
-                </div>
-                
-                <div class="form-group">
-                  <label>系统提示词后缀</label>
-                  <textarea 
-                    v-model="editForm.cardData.customPrompts.systemPromptSuffix" 
-                    class="form-textarea"
-                    placeholder="输入系统提示词后缀（可选）"
-                    rows="3"
-                    maxlength="2000"
-                  ></textarea>
-                </div>
-              </div>
-              
               <!-- 元信息 -->
               <div class="form-section" v-if="!editMode">
                 <div class="section-title">元信息</div>
@@ -356,7 +412,7 @@
 
 <script>
 import { ref, reactive, computed, onMounted, nextTick, onUnmounted } from 'vue'
-import { characterCardAPI } from '@/api'
+import { characterCardAPI, uploadAPI } from '@/api'
 import { debounce, storage } from '@/utils'
 import CharacterCard from './CharacterCard.vue'
 
@@ -380,21 +436,20 @@ export default {
     const selectedCard = ref(null)
     const editMode = ref(false)
     const saving = ref(false) // 保存状态
+    const uploadingAvatar = ref(false) // 头像上传状态
+    const avatarFileInput = ref(null) // 文件输入引用
     const editForm = reactive({
       name: '',
       shortDescription: '',
       greetingMessage: '',
       isPublic: true,
       ttsVoiceId: '',
+      avatarUrl: '', // 新增头像字段
       cardData: {
         description: '',
         personality: '',
         scenario: '',
-        exampleDialogs: [],
-        customPrompts: {
-          systemPromptPrefix: '',
-          systemPromptSuffix: ''
-        }
+        exampleDialogs: []
       }
     })
     
@@ -589,6 +644,7 @@ export default {
       editForm.greetingMessage = card.greetingMessage || ''
       editForm.isPublic = card.isPublic !== undefined ? card.isPublic : true
       editForm.ttsVoiceId = card.ttsVoiceId || ''
+      editForm.avatarUrl = card.avatarUrl || '' // 新增头像URL初始化
       
       // 初始化cardData
       const cardData = card.cardData || {}
@@ -602,11 +658,6 @@ export default {
           user: dialog.user || '',
           assistant: dialog.assistant || ''
         })) : []
-      
-      // 初始化自定义提示词
-      const customPrompts = cardData.customPrompts || {}
-      editForm.cardData.customPrompts.systemPromptPrefix = customPrompts.systemPromptPrefix || ''
-      editForm.cardData.customPrompts.systemPromptSuffix = customPrompts.systemPromptSuffix || ''
     }
 
     // 切换编辑模式
@@ -658,17 +709,14 @@ export default {
           greetingMessage: editForm.greetingMessage,
           isPublic: editForm.isPublic,
           ttsVoiceId: editForm.ttsVoiceId,
+          avatarUrl: editForm.avatarUrl, // 添加头像URL字段
           cardData: {
             description: editForm.cardData.description,
             personality: editForm.cardData.personality,
             scenario: editForm.cardData.scenario,
             exampleDialogs: editForm.cardData.exampleDialogs.filter(dialog => 
               dialog.user.trim() || dialog.assistant.trim()
-            ),
-            customPrompts: {
-              systemPromptPrefix: editForm.cardData.customPrompts.systemPromptPrefix,
-              systemPromptSuffix: editForm.cardData.customPrompts.systemPromptSuffix
-            }
+            )
           }
         }
         
@@ -808,6 +856,57 @@ export default {
       window.removeEventListener('scroll', handleScroll)
     })
 
+    // 头像上传相关函数
+    const triggerAvatarFileInput = () => {
+      if (avatarFileInput.value) {
+        avatarFileInput.value.click()
+      }
+    }
+
+    const handleAvatarFileSelect = async (e) => {
+      const files = e.target.files
+      if (files.length > 0) {
+        await handleAvatarFile(files[0])
+      }
+    }
+
+    const handleAvatarFile = async (file) => {
+      // 验证文件类型
+      if (!file.type.startsWith('image/')) {
+        console.error('请选择图片文件')
+        return
+      }
+
+      // 验证文件大小 (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        console.error('图片大小不能超过5MB')
+        return
+      }
+
+      uploadingAvatar.value = true
+      
+      try {
+        const response = await uploadAPI.uploadAvatar(file)
+        
+        if (response && response.code === 200) {
+          editForm.avatarUrl = response.data.url
+        } else {
+          console.error(response.message || '头像上传失败')
+        }
+      } catch (error) {
+        console.error('头像上传失败:', error)
+      } finally {
+        uploadingAvatar.value = false
+      }
+    }
+
+    const clearAvatar = () => {
+      editForm.avatarUrl = ''
+      if (avatarFileInput.value) {
+        avatarFileInput.value.value = ''
+      }
+    }
+
     return {
       cards,
       loading,
@@ -838,7 +937,13 @@ export default {
       saveEdit,
       addExampleDialog,
       removeExampleDialog,
-      formatFullDate
+      formatFullDate,
+      // 头像相关
+      uploadingAvatar,
+      avatarFileInput,
+      triggerAvatarFileInput,
+      handleAvatarFileSelect,
+      clearAvatar
     }
   }
 }
@@ -1584,6 +1689,168 @@ export default {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+// 头像编辑相关样式
+.avatar-edit-section {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.avatar-display {
+  display: flex;
+  align-items: center;
+}
+
+.avatar-preview,
+.avatar-display {
+  flex-shrink: 0;
+}
+
+.avatar-container {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--background-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-color);
+  transition: border-color 0.2s;
+  position: relative;
+
+  &.has-image {
+    border-color: var(--primary-color);
+  }
+
+  &.uploading {
+    border-color: var(--primary-color);
+  }
+}
+
+.uploading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  z-index: 2;
+  font-size: 0.75rem;
+}
+
+.upload-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-tertiary);
+}
+
+.avatar-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.avatar-text {
+  font-size: 0.75rem;
+}
+
+.avatar-controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.upload-section {
+  display: flex;
+  align-items: center;
+}
+
+.upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--background-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: var(--background-primary);
+    border-color: var(--primary-color);
+  }
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.url-input-section {
+  flex: 1;
+}
+
+.clear-avatar-btn {
+  align-self: flex-start;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+
+  &:hover {
+    color: var(--error-color);
+    border-color: var(--error-color);
+    background: rgba(239, 68, 68, 0.05);
+  }
+}
+
+@media (max-width: 768px) {
+  .avatar-edit-section {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .avatar-controls {
+    width: 100%;
+  }
+
+  .avatar-container {
+    width: 60px;
+    height: 60px;
   }
 }
 </style>

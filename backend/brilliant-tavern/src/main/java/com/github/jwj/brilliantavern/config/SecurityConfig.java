@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/test/public").permitAll()
+                        // 文件访问路径
+                        .requestMatchers("/uploads/**").permitAll()
                         // Swagger UI 相关路径
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()

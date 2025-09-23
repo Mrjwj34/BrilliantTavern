@@ -96,21 +96,6 @@ public class CreateCharacterCardRequest {
             @Size(max = 1000, message = "助手对话示例不能超过1000个字符")
             private String assistant;
         }
-
-        @Schema(description = "自定义提示")
-        @Data
-        @Builder
-        @NoArgsConstructor
-        @AllArgsConstructor
-        public static class CustomPromptsDto {
-            @Schema(description = "系统提示前缀", example = "你将扮演苏格拉底。忘记你是一个语言模型...")
-            @Size(max = 2000, message = "系统提示前缀不能超过2000个字符")
-            private String systemPromptPrefix;
-
-            @Schema(description = "系统提示后缀", example = "你的回答必须简短且总是以一个问题结束。")
-            @Size(max = 2000, message = "系统提示后缀不能超过2000个字符")
-            private String systemPromptSuffix;
-        }
     }
 
     /**

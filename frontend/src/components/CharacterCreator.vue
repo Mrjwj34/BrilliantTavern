@@ -59,9 +59,13 @@
           <div class="avatar-section">
             <!-- 头像预览 -->
             <div class="avatar-preview">
-              <div class="avatar-container" :class="{ 'has-image': formData.avatarUrl || uploadedImage }">
-                <img v-if="uploadedImage || formData.avatarUrl" 
-                     :src="uploadedImage || formData.avatarUrl" 
+              <div class="avatar-container" :class="{ 'has-image': formData.avatarUrl, 'uploading': uploadedImage === 'uploading' }">
+                <div v-if="uploadedImage === 'uploading'" class="uploading-overlay">
+                  <div class="upload-spinner"></div>
+                  <span class="upload-text">上传中...</span>
+                </div>
+                <img v-else-if="formData.avatarUrl" 
+                     :src="formData.avatarUrl" 
                      alt="角色头像" 
                      class="avatar-image" />
                 <div v-else class="avatar-placeholder">
@@ -73,8 +77,11 @@
                 </div>
               </div>
               <!-- 图片来源提示 -->
-              <div v-if="uploadedImage || formData.avatarUrl" class="avatar-source">
-                {{ uploadedImage ? '已上传文件' : 'URL链接' }}
+              <div v-if="uploadedImage === 'uploading'" class="avatar-source">
+                正在上传...
+              </div>
+              <div v-else-if="formData.avatarUrl" class="avatar-source">
+                {{ uploadedImage === 'uploaded' ? '已上传文件' : 'URL链接' }}
               </div>
             </div>
             
@@ -84,44 +91,44 @@
                    @dragover.prevent="handleDragOver"
                    @dragleave="handleDragLeave"
                    @drop.prevent="handleDrop"
-                   :class="{ 'drag-over': isDragOver, 'disabled': formData.avatarUrl }"
-                    @click="triggerFileInput"
-           role="button"
-           tabindex="0"
-           @keydown.enter.prevent="triggerFileInput"
-           @keydown.space.prevent="triggerFileInput">
+                   :class="{ 'drag-over': isDragOver }"
+                   @click="triggerFileInput"
+                   role="button"
+                   tabindex="0"
+                   @keydown.enter.prevent="triggerFileInput"
+                   @keydown.space.prevent="triggerFileInput">
                 <input ref="fileInput" 
-        type="file" 
-        accept="image/*" 
-                        @change="handleFileSelect"
-        id="avatarFileInput"
-        aria-label="选择头像图片文件"
-        style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:auto;" />
-                <label class="upload-content" :for="!formData.avatarUrl ? 'avatarFileInput' : null" @click.stop>
+                       type="file" 
+                       accept="image/*" 
+                       @change="handleFileSelect"
+                       id="avatarFileInput"
+                       aria-label="选择头像图片文件"
+                       style="position:absolute; width:1px; height:1px; opacity:0; pointer-events:auto;" />
+                <label class="upload-content" for="avatarFileInput" @click.stop>
                   <svg class="upload-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="M17 8L12 3L7 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     <path d="M12 3V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                   <p class="upload-text">
-                    {{ formData.avatarUrl ? '已有链接，文件上传已禁用' : '拖拽图片到此处或点击选择' }}
+                    拖拽图片到此处或点击选择
                   </p>
-                  <p v-if="!formData.avatarUrl" class="upload-hint">支持 JPG、PNG、GIF 格式，建议尺寸 256x256 像素</p>
-        </label>
+                  <p class="upload-hint">支持 JPG、PNG、GIF 格式，建议尺寸 256x256 像素</p>
+                </label>
               </div>
               
               <!-- URL输入 -->
               <div class="url-input-group">
                 <label class="form-label">
                   或输入图片链接
-                  <span v-if="uploadedImage" class="input-disabled-hint">（已有上传文件，链接输入已禁用）</span>
+                  <span v-if="uploadedImage === 'uploaded'" class="input-disabled-hint">（已有上传文件，链接输入已禁用）</span>
                 </label>
                 <input
                   v-model="formData.avatarUrl"
                   type="url"
                   class="form-input"
-                  :class="{ 'error': errors.avatarUrl, 'disabled': uploadedImage }"
-                  :disabled="uploadedImage"
+                  :class="{ 'error': errors.avatarUrl, 'disabled': uploadedImage === 'uploaded' }"
+                  :disabled="uploadedImage === 'uploaded'"
                   placeholder="https://example.com/avatar.jpg"
                   maxlength="500"
                   @blur="validateField('avatarUrl')"
@@ -133,7 +140,7 @@
               </div>
               
               <!-- 清除按钮 -->
-              <div v-if="formData.avatarUrl || uploadedImage" class="avatar-actions">
+              <div v-if="formData.avatarUrl" class="avatar-actions">
                 <button type="button" @click="clearAvatar" class="btn-clear">
                   清除头像
                 </button>
@@ -149,45 +156,43 @@
             <p class="section-description">设置角色的基本属性</p>
           </div>
           
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="name" class="form-label">
-                角色名称 <span class="required">*</span>
-              </label>
-              <input
-                id="name"
-                v-model="formData.name"
-                type="text"
-                class="form-input"
-                :class="{ 'error': errors.name }"
-                placeholder="输入角色名称，如：苏格拉底"
-                maxlength="100"
-                @blur="validateField('name')"
-                @input="clearError('name')"
-              />
-              <div v-if="errors.name" class="error-text">
-                {{ errors.name }}
-              </div>
+          <div class="form-group">
+            <label for="name" class="form-label">
+              角色名称 <span class="required">*</span>
+            </label>
+            <input
+              id="name"
+              v-model="formData.name"
+              type="text"
+              class="form-input"
+              :class="{ 'error': errors.name }"
+              placeholder="输入角色名称，如：苏格拉底"
+              maxlength="100"
+              @blur="validateField('name')"
+              @input="clearError('name')"
+            />
+            <div v-if="errors.name" class="error-text">
+              {{ errors.name }}
             </div>
+          </div>
 
-            <div class="form-group">
-              <label for="shortDescription" class="form-label">
-                简短描述 <span class="required">*</span>
-              </label>
-              <input
-                id="shortDescription"
-                v-model="formData.shortDescription"
-                type="text"
-                class="form-input"
-                :class="{ 'error': errors.shortDescription }"
-                placeholder="一句话描述角色，如：古希腊哲学家，智慧的化身"
-                maxlength="500"
-                @blur="validateField('shortDescription')"
-                @input="clearError('shortDescription')"
-              />
-              <div v-if="errors.shortDescription" class="error-text">
-                {{ errors.shortDescription }}
-              </div>
+          <div class="form-group">
+            <label for="shortDescription" class="form-label">
+              简短描述 <span class="required">*</span>
+            </label>
+            <input
+              id="shortDescription"
+              v-model="formData.shortDescription"
+              type="text"
+              class="form-input"
+              :class="{ 'error': errors.shortDescription }"
+              placeholder="一句话描述角色，如：古希腊哲学家，智慧的化身"
+              maxlength="500"
+              @blur="validateField('shortDescription')"
+              @input="clearError('shortDescription')"
+            />
+            <div v-if="errors.shortDescription" class="error-text">
+              {{ errors.shortDescription }}
             </div>
           </div>
 
@@ -242,7 +247,7 @@
         </div>
 
         <!-- 角色设定 -->
-        <div class="form-section">
+        <div class="form-section compact-section">
           <div class="section-header">
             <h3 class="section-title">角色设定</h3>
             <p class="section-description">详细描述角色的性格和背景</p>
@@ -255,10 +260,10 @@
             <textarea
               id="description"
               v-model="formData.cardData.description"
-              class="form-textarea"
+              class="form-textarea compact"
               :class="{ 'error': errors.description }"
               placeholder="详细描述角色的背景故事、出生经历、重要事件等..."
-              rows="6"
+              rows="4"
               maxlength="5000"
               @blur="validateField('description')"
               @input="clearError('description')"
@@ -275,10 +280,10 @@
             <textarea
               id="personality"
               v-model="formData.cardData.personality"
-              class="form-textarea"
+              class="form-textarea compact"
               :class="{ 'error': errors.personality }"
               placeholder="描述角色的性格特征，如：聪明、好奇、有点固执、喜欢用反问来引导对话..."
-              rows="4"
+              rows="3"
               maxlength="2000"
               @blur="validateField('personality')"
               @input="clearError('personality')"
@@ -293,10 +298,10 @@
             <textarea
               id="scenario"
               v-model="formData.cardData.scenario"
-              class="form-textarea"
+              class="form-textarea compact"
               :class="{ 'error': errors.scenario }"
               placeholder="描述对话发生的场景环境，如：你正在雅典的市集上与苏格拉底相遇..."
-              rows="4"
+              rows="3"
               maxlength="3000"
               @blur="validateField('scenario')"
               @input="clearError('scenario')"
@@ -388,7 +393,7 @@
 
 <script>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { characterCardAPI, voiceAPI } from '@/api'
+import { characterCardAPI, voiceAPI, uploadAPI } from '@/api'
 import { validation } from '@/utils'
 
 export default {
@@ -528,13 +533,7 @@ export default {
     }
 
     // 头像上传相关方法
-    const handleFile = (file) => {
-      // 如果有URL链接，先清除
-      if (formData.avatarUrl) {
-        showError('请先清除图片链接再上传文件，或直接使用链接方式')
-        return
-      }
-
+    const handleFile = async (file) => {
       // 验证文件类型
       if (!file.type.startsWith('image/')) {
         showError('请选择图片文件')
@@ -547,22 +546,51 @@ export default {
         return
       }
 
-      // 读取文件并转换为base64
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        uploadedImage.value = e.target.result
-        clearError('avatarUrl')
+      // 显示上传中的状态
+      uploadedImage.value = 'uploading'
+      
+      try {
+        // 上传文件到服务器
+        const response = await uploadAPI.uploadAvatar(file)
+        
+        if (response && response.code === 200) {
+          // 上传成功，设置头像URL
+          formData.avatarUrl = response.data.url
+          uploadedImage.value = 'uploaded' // 标记为已上传
+          clearError('avatarUrl')
+        } else {
+          showError(response.message || '头像上传失败')
+          uploadedImage.value = null
+        }
+      } catch (error) {
+        console.error('头像上传失败:', error)
+        uploadedImage.value = null
+        
+        if (error.response) {
+          const status = error.response.status
+          const message = error.response.data?.message
+          
+          if (status >= 500) {
+            showError(message || '服务器内部错误，请稍后重试')
+          } else if (status === 401) {
+            showError('登录已过期，请重新登录')
+          } else if (status === 413) {
+            showError('文件大小超出限制')
+          } else {
+            showError(message || '头像上传失败，请重试')
+          }
+        } else if (error.request) {
+          showError('网络连接失败，请检查网络后重试')
+        } else {
+          showError('头像上传失败，请重试')
+        }
       }
-      reader.onerror = () => {
-        showError('图片读取失败')
-      }
-      reader.readAsDataURL(file)
     }
 
     const handleUrlInput = () => {
       clearError('avatarUrl')
-      // 如果输入URL，清除上传的图片
-      if (formData.avatarUrl && uploadedImage.value) {
+      // 如果输入URL，清除上传状态
+      if (uploadedImage.value === 'uploaded' || uploadedImage.value === 'uploading') {
         uploadedImage.value = null
         if (fileInput.value) {
           fileInput.value.value = ''
@@ -572,23 +600,17 @@ export default {
 
   const triggerFileInput = (event) => {
       console.log('triggerFileInput called', event, fileInput.value)
-      if (!formData.avatarUrl) {
-        if (fileInput.value) {
-          console.log('Clicking file input element')
-          fileInput.value.click()
-        } else {
-          console.error('File input ref is null')
-        }
+      if (fileInput.value) {
+        console.log('Clicking file input element')
+        fileInput.value.click()
       } else {
-        showError('请先清除图片链接再上传文件')
+        console.error('File input ref is null')
       }
     }
 
     const handleDragOver = (e) => {
-      if (!formData.avatarUrl) {
-        e.preventDefault()
-        isDragOver.value = true
-      }
+      e.preventDefault()
+      isDragOver.value = true
     }
 
     const handleDragLeave = () => {
@@ -596,14 +618,12 @@ export default {
     }
 
     const handleDrop = (e) => {
-      if (!formData.avatarUrl) {
-        e.preventDefault()
-        isDragOver.value = false
-        
-        const files = e.dataTransfer.files
-        if (files.length > 0) {
-          handleFile(files[0])
-        }
+      e.preventDefault()
+      isDragOver.value = false
+      
+      const files = e.dataTransfer.files
+      if (files.length > 0) {
+        handleFile(files[0])
       }
     }
 
@@ -716,8 +736,6 @@ export default {
         // 构建提交数据
         const submitData = {
           ...formData,
-          // 优先使用上传的图片，否则使用URL
-          avatarUrl: uploadedImage.value || formData.avatarUrl,
           cardData: {
             ...formData.cardData,
             exampleDialogs: filteredDialogs
@@ -993,6 +1011,16 @@ export default {
   &:last-child {
     margin-bottom: 0;
   }
+  
+  /* 紧凑模式减少间距 */
+  &.compact {
+    margin-bottom: calc($spacing * 0.75);
+  }
+}
+
+/* 角色设定部分使用紧凑布局 */
+.form-section.compact-section .form-group {
+  margin-bottom: calc($spacing * 0.75);
 }
 
 .form-label {
@@ -1001,11 +1029,18 @@ export default {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
+  line-height: 1.4;
 
   .required {
     color: var(--error-color);
     margin-left: 2px;
   }
+}
+
+/* 角色设定区域的标签紧凑间距 */
+.form-section.compact-section .form-label {
+  margin-bottom: calc($spacing-xs * 0.8);
+  line-height: 1.3;
 }
 
 .form-input,
@@ -1041,6 +1076,13 @@ export default {
   min-height: 80px;
   font-family: inherit;
   line-height: 1.5;
+  
+  /* 紧凑样式 */
+  &.compact {
+    min-height: 60px;
+    line-height: 1.4;
+    padding: 8px 12px;
+  }
 }
 
 .form-select {
@@ -1393,10 +1435,39 @@ export default {
   justify-content: center;
   border: 2px solid var(--border-color);
   transition: border-color 0.2s;
+  position: relative;
 
   &.has-image {
     border-color: var(--primary-color);
   }
+
+  &.uploading {
+    border-color: var(--primary-color);
+  }
+}
+
+.uploading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-xs;
+  z-index: 2;
+}
+
+.upload-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .avatar-image {
@@ -1434,6 +1505,13 @@ export default {
   display: flex;
   flex-direction: column;
   gap: $spacing;
+  
+  /* 除了上传区域外的所有直接子元素都左对齐到容器边缘 */
+  > *:not(.upload-area) {
+    align-self: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+  }
 }
 
 .upload-area {

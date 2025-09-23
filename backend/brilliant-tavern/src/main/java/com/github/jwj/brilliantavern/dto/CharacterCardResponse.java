@@ -27,6 +27,7 @@ public class CharacterCardResponse {
     private Boolean isPublic;
     private Integer likesCount;
     private String ttsVoiceId;
+    private String avatarUrl;
     private CharacterCardDataDto cardData;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
@@ -75,6 +76,7 @@ public class CharacterCardResponse {
                 .isPublic(card.getIsPublic())
                 .likesCount(card.getLikesCount())
                 .ttsVoiceId(card.getTtsVoiceId())
+                .avatarUrl(card.getAvatarUrl())
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())
                 .isLikedByCurrentUser(isLikedByCurrentUser);

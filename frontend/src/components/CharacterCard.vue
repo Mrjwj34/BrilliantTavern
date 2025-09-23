@@ -4,8 +4,8 @@
     <div class="card-left">
       <div class="character-avatar">
         <img 
-          v-if="card && card.image" 
-          :src="card.image" 
+          v-if="card && card.avatarUrl" 
+          :src="card.avatarUrl" 
           :alt="card ? card.name : '角色头像'"
           class="avatar-image"
           @error="handleImageError"

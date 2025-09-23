@@ -94,6 +94,20 @@ export const characterCardAPI = {
   }
 }
 
+// 文件上传相关API
+export const uploadAPI = {
+  // 上传头像
+  uploadAvatar(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request.post('/api/upload/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+  }
+}
+
 // 语音相关API
 export const voiceAPI = {
   // 获取可用语音列表
