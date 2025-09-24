@@ -68,6 +68,11 @@ public class SecurityConfig {
                         .requestMatchers("/test/public").permitAll()
                         // 文件访问路径
                         .requestMatchers("/uploads/**").permitAll()
+                        // WebSocket 相关路径
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers("/app/**").permitAll()
+                        .requestMatchers("/topic/**").permitAll()
+                        .requestMatchers("/queue/**").permitAll()
                         // Swagger UI 相关路径
                         .requestMatchers("/swagger-ui/**").permitAll()
                         .requestMatchers("/swagger-ui.html").permitAll()

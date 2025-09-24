@@ -36,7 +36,38 @@ spring:
       max-request-size: 10MB
       enabled: true
   
-  # 服务器配置
+  # Redis配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      jedis:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+      timeout: 3000ms
+
+  # Spring AI配置
+  ai:
+    model:
+      chat: vertexai  # 启用Vertex AI Chat模型
+    vertex:
+      ai:
+        gemini:
+          project-id: ${VERTEX_AI_PROJECT_ID:blissful-mile-468505-e2}
+          location: ${VERTEX_AI_LOCATION:us-central1}
+          chat:
+            options:
+              model: gemini-2.0-flash
+              temperature: 0.7
+              max-output-tokens: 2048
+              candidate-count: 1
+
+# 服务器配置
 server:
   port: 8080
   servlet:
@@ -51,6 +82,18 @@ jwt:
 
 # 应用配置
 app:
+  # TTS服务配置
+  tts:
+    provider: mock  # 开发阶段使用mock实现
+    default-voice: voice-001
+    
+  # Spring AI ChatMemory配置
+  ai:
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: always
   cors:
     allowed-origins: http://localhost:3000,http://localhost:5173
     allowed-methods: GET,POST,PUT,DELETE,OPTIONS
@@ -61,6 +104,10 @@ app:
   upload:
     max-file-size: 10MB
     max-request-size: 10MB
+    
+  # WebSocket配置  
+  websocket:
+    allowed-origins: http://localhost:3000,http://localhost:5173
 
 # SpringDoc OpenAPI 配置
 springdoc:
@@ -78,7 +125,7 @@ springdoc:
 # 日志配置
 logging:
   level:
-    com.github.jwj.brilliantavern: DEBUG
+    '[com.github.jwj.brilliantavern]': DEBUG
     '[com.github.jwj.brilliantavern.security.JwtAuthenticationEntryPoint]': INFO  # 减少未授权访问的日志输出
     '[org.springframework.security]': DEBUG
     '[org.hibernate.SQL]': DEBUG
