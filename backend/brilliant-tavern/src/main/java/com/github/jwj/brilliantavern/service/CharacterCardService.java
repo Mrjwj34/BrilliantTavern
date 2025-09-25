@@ -117,6 +117,14 @@ public class CharacterCardService {
     }
 
     /**
+     * 根据ID获取角色卡（内部使用，不检查权限）
+     */
+    @Transactional(readOnly = true)
+    public CharacterCard findById(UUID cardId) {
+        return characterCardRepository.findById(cardId).orElse(null);
+    }
+
+    /**
      * 根据ID获取角色卡
      */
     @Transactional(readOnly = true)

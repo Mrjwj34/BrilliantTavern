@@ -196,7 +196,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI } from '@/api'
-import { validation, storage } from '@/utils'
+import { validation, storage, notification } from '@/utils'
 
 export default {
   name: 'Register',
@@ -347,6 +347,7 @@ export default {
           // 跳转到仪表盘
           router.push('/dashboard')
           
+          notification.success('注册成功！欢迎加入BrilliantTavern')
           console.log('注册成功')
         } else {
           // 处理业务错误

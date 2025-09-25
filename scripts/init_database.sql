@@ -86,7 +86,32 @@ CREATE INDEX IF NOT EXISTS idx_card_comments_author_id ON card_comments(author_i
 CREATE INDEX IF NOT EXISTS idx_card_comments_created_at ON card_comments(created_at DESC);
 
 -- =====================================
--- 5. 对话历史表 (chat_history)
+-- 5. TTS语音表 (tts_voices)
+-- =====================================
+CREATE TABLE IF NOT EXISTS tts_voices (
+    id BIGSERIAL PRIMARY KEY,
+    reference_id VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    creator_id UUID NOT NULL,
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    reference_text TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- TTS语音表索引
+CREATE INDEX IF NOT EXISTS idx_tts_voices_reference_id ON tts_voices(reference_id);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_creator_id ON tts_voices(creator_id);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_is_public ON tts_voices(is_public);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_deleted ON tts_voices(deleted);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_created_at ON tts_voices(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_name ON tts_voices USING gin(name gin_trgm_ops);
+
+-- =====================================
+-- 6. 对话历史表 (chat_history)
 -- =====================================
 CREATE TABLE IF NOT EXISTS chat_history (
     id BIGSERIAL PRIMARY KEY,
@@ -126,6 +151,9 @@ CREATE TRIGGER update_character_cards_updated_at BEFORE UPDATE ON character_card
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_card_comments_updated_at BEFORE UPDATE ON card_comments
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_tts_voices_updated_at BEFORE UPDATE ON tts_voices
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================

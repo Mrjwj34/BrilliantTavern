@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { storage, tokenUtils } from './index'
+import { notification } from './notification'
 
 // 用于在拦截器中访问router的变量
 let routerInstance = null
@@ -66,6 +67,7 @@ request.interceptors.response.use(
           // 未授权，清除token并跳转到登录页（使用router而不是location.href避免页面刷新）
           console.log('收到401响应，清除认证信息')
           tokenUtils.clearAuth()
+          notification.error('登录已过期，请重新登录')
           if (routerInstance) {
             routerInstance.push('/login')
           } else {
@@ -75,20 +77,26 @@ request.interceptors.response.use(
           break
         case 403:
           error.message = '权限不足'
+          notification.error('权限不足')
           break
         case 404:
           error.message = '请求的资源不存在'
+          notification.error('请求的资源不存在')
           break
         case 500:
           error.message = '服务器内部错误'
+          notification.error('服务器内部错误，请稍后重试')
           break
         default:
           error.message = data?.message || `请求失败 (${status})`
+          notification.error(error.message)
       }
     } else if (error.request) {
       error.message = '网络连接失败，请检查网络'
+      notification.error('网络连接失败，请检查网络')
     } else {
       error.message = error.message || '请求配置错误'
+      notification.error(error.message)
     }
     
     return Promise.reject(error)

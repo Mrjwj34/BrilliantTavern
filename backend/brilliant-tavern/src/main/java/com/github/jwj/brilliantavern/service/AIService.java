@@ -4,21 +4,22 @@ import com.github.jwj.brilliantavern.entity.CharacterCard;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.MimeType;
+import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -40,7 +41,7 @@ public class AIService {
     private Resource promptTemplate;
     
     // ASR转写结果的正则表达式
-    private static final Pattern ASR_PATTERN = Pattern.compile("\\[ASR_TRANSCRIPTION\\](.*?)\\[/ASR_TRANSCRIPTION\\]");
+    private static final Pattern ASR_PATTERN = Pattern.compile("\\[ASR_TRANSCRIPTION](.*?)\\[/ASR_TRANSCRIPTION]");
 
     /**
      * 处理语音消息并返回AI回复流
@@ -57,38 +58,58 @@ public class AIService {
             // 构建系统提示词
             String systemPrompt = buildSystemPrompt(characterCard);
             
-            // TODO: 这里应该集成实际的音频处理，暂时模拟用户说了"你好"
-            String simulatedUserText = "你好，我刚发送了一段语音消息。";
+            // 获取历史对话消息
+            List<org.springframework.ai.chat.messages.Message> historyMessages = chatMemory.get(conversationId);
             
-            // 获取历史对话
-            List<org.springframework.ai.chat.messages.Message> messages = new ArrayList<>();
-            messages.add(new SystemMessage(systemPrompt));
-            messages.addAll(chatMemory.get(conversationId));
-            messages.add(new UserMessage(simulatedUserText));
+            // 创建音频媒体资源
+            ByteArrayResource audioResource = new ByteArrayResource(voiceMessage.getAudioData());
+            MimeType audioMimeType = getAudioMimeType(voiceMessage.getAudioFormat());
             
-            // 构建提示
-            Prompt prompt = new Prompt(messages);
-            
-            // 调用模型并处理流式响应
             StringBuilder fullResponse = new StringBuilder();
             
-            return chatModel.stream(prompt)
-                .map(response -> response.getResult().getOutput().getText())
-                .doOnNext(content -> {
-                    fullResponse.append(content);
-                    log.debug("AI回复片段: {}", content);
-                })
-                .doOnComplete(() -> {
-                    // 处理完整回复，提取ASR转写并更新对话历史
-                    String completeResponse = fullResponse.toString();
-                    processCompleteResponse(completeResponse, conversationId, simulatedUserText);
-                })
-                .doOnError(error -> log.error("AI处理失败", error));
+            // 使用ChatClient构建多模态消息
+            ChatClient chatClient = ChatClient.create(chatModel);
+            
+            return chatClient.prompt()
+                    .system(systemPrompt)
+                    .messages(historyMessages) // 添加历史对话
+                    .user(userSpec -> userSpec
+                            .media(audioMimeType, audioResource))
+                    .stream()
+                    .content()
+                    .doOnNext(content -> {
+                        fullResponse.append(content);
+                        log.debug("AI回复片段: {}", content);
+                    })
+                    .doOnComplete(() -> {
+                        // 处理完整回复，提取ASR转写并更新对话历史
+                        String completeResponse = fullResponse.toString();
+                        processCompleteResponse(completeResponse, conversationId, "音频消息");
+                    })
+                    .doOnError(error -> log.error("AI处理语音消息失败", error));
                 
         } catch (Exception e) {
             log.error("处理语音消息失败", e);
             return Flux.error(e);
         }
+    }
+    
+    /**
+     * 根据音频格式获取对应的MimeType
+     */
+    private MimeType getAudioMimeType(String audioFormat) {
+        if (audioFormat == null) {
+            return MimeTypeUtils.APPLICATION_OCTET_STREAM;
+        }
+        
+        return switch (audioFormat.toLowerCase()) {
+            case "wav" -> MimeType.valueOf("audio/wav");
+            case "mp3" -> MimeType.valueOf("audio/mpeg");
+            case "webm" -> MimeType.valueOf("audio/webm");
+            case "ogg" -> MimeType.valueOf("audio/ogg");
+            case "m4a" -> MimeType.valueOf("audio/m4a");
+            default -> MimeTypeUtils.APPLICATION_OCTET_STREAM;
+        };
     }
 
     /**
@@ -110,23 +131,8 @@ public class AIService {
             
         } catch (IOException e) {
             log.error("读取提示词模板失败", e);
-            // 降级方案：使用简单的字符串拼接
-            return buildFallbackPrompt(characterCard);
+            throw new RuntimeException("无法构建系统提示词", e);
         }
-    }
-    
-    /**
-     * 降级方案：简单的提示词构建
-     */
-    private String buildFallbackPrompt(CharacterCard characterCard) {
-        return String.format(
-            "你是一个名为 %s 的虚拟角色。%s\n性格特点：%s\n说话风格：%s\n" +
-            "请完全代入这个角色进行对话，并在回复后用[ASR_TRANSCRIPTION]标记转写用户语音内容。",
-            characterCard.getName(),
-            getCharacterDescription(characterCard),
-            getCharacterPersonality(characterCard),
-            getCharacterStyle(characterCard)
-        );
     }
     
     /**
@@ -172,7 +178,7 @@ public class AIService {
             if (matcher.find()) {
                 userTranscription = matcher.group(1).trim();
                 // 从AI回复中移除ASR标记
-                aiResponse = completeResponse.replaceAll("\\[ASR_TRANSCRIPTION\\].*?\\[/ASR_TRANSCRIPTION\\]", "").trim();
+                aiResponse = completeResponse.replaceAll("\\[ASR_TRANSCRIPTION].*?\\[/ASR_TRANSCRIPTION]", "").trim();
                 
                 log.debug("提取到用户转写内容: {}", userTranscription);
             }
@@ -190,18 +196,6 @@ public class AIService {
             
         } catch (Exception e) {
             log.error("处理完整回复失败", e);
-        }
-    }
-
-    /**
-     * 清除指定对话的历史记录
-     */
-    public void clearConversationHistory(String conversationId) {
-        try {
-            chatMemory.clear(conversationId);
-            log.info("清除对话历史成功，对话ID: {}", conversationId);
-        } catch (Exception e) {
-            log.error("清除对话历史失败，对话ID: {}", conversationId, e);
         }
     }
 }

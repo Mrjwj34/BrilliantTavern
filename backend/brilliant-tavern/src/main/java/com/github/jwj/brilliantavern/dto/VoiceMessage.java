@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * 语音消息DTO
+ * 支持原始二进制音频数据传输，提高传输效率
  */
 @Data
 @Builder
@@ -15,7 +16,8 @@ import lombok.NoArgsConstructor;
 public class VoiceMessage {
     
     /**
-     * 音频数据（Base64编码或字节数组）
+     * 原始音频二进制数据
+     * 直接存储音频字节流，避免Base64编码开销
      */
     private byte[] audioData;
     
@@ -23,11 +25,6 @@ public class VoiceMessage {
      * 音频格式（如：wav, mp3, webm等）
      */
     private String audioFormat;
-    
-    /**
-     * 音频时长（秒）
-     */
-    private Double duration;
     
     /**
      * 消息ID

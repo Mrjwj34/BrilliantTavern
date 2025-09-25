@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,7 +37,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private String tokenPrefix;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, 
+    protected boolean shouldNotFilterAsyncDispatch() {
+        // 允许在异步分派(例如Spring MVC返回Mono/DeferredResult时的二次分派)阶段继续执行本过滤器，
+        // 以便再次基于请求头中的Authorization解析JWT并恢复SecurityContext。
+        return false;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         
         String requestHeader = request.getHeader(tokenHeader);

@@ -184,20 +184,9 @@
             <CharacterCreator @created="handleCharacterCreated" />
           </div>
 
-          <!-- 语音对话页面占位 -->
-          <div v-else-if="activeTab === 'voice'" key="voice" class="placeholder-view">
-            <div class="placeholder-content">
-              <div class="placeholder-icon-wrapper">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="placeholder-icon">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/>
-                  <line x1="8" y1="23" x2="16" y2="23"/>
-                </svg>
-              </div>
-              <h2 class="placeholder-title">语音对话</h2>
-              <p class="placeholder-text">功能开发中，敬请期待</p>
-            </div>
+          <!-- 语音对话页面 -->
+          <div v-else-if="activeTab === 'voice'" key="voice" class="voice-view">
+            <VoiceChat />
           </div>
         </transition>
       </div>
@@ -211,12 +200,14 @@ import { authAPI } from '@/api'
 import { storage, tokenUtils } from '@/utils'
 import CharacterMarket from '@/components/CharacterMarket.vue'
 import CharacterCreator from '@/components/CharacterCreator.vue'
+import VoiceChat from '@/views/VoiceChat.vue'
 
 export default {
   name: 'Dashboard',
   components: {
     CharacterMarket,
-    CharacterCreator
+    CharacterCreator,
+    VoiceChat
   },
   setup() {
     const router = useRouter()
@@ -267,30 +258,16 @@ export default {
         if (localUser) {
           user.value = localUser
           console.log('已加载本地用户信息:', localUser.username)
-        }
-
-        try {
-          if (typeof authAPI.getUserInfo === 'function') {
-            const response = await authAPI.getUserInfo()
-            if (response && response.code === 200) {
-              user.value = {
-                ...user.value,
-                ...response.data
-              }
-              storage.set('user', user.value)
-              console.log('已更新用户信息从服务器')
-            }
-          }
-        } catch (apiError) {
-          console.log('无法从服务器更新用户信息，使用本地数据')
-        }
-      } catch (error) {
-        console.error('加载用户信息失败:', error)
-        if (!storage.get('user')) {
+        } else {
           console.error('本地用户信息缺失，清除认证信息')
           tokenUtils.clearAuth()
           router.push('/login')
         }
+      } catch (error) {
+        console.error('加载用户信息失败:', error)
+        console.error('本地用户信息缺失，清除认证信息')
+        tokenUtils.clearAuth()
+        router.push('/login')
       }
     }
 
@@ -833,7 +810,8 @@ export default {
 
 // 新页面样式
 .market-view,
-.create-view {
+.create-view,
+.voice-view {
   height: 100%;
   display: flex;
   flex-direction: column;

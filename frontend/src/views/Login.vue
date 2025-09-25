@@ -133,7 +133,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI } from '@/api'
-import { storage, validation } from '@/utils'
+import { storage, validation, notification } from '@/utils'
 
 export default {
   name: 'Login',
@@ -224,6 +224,7 @@ export default {
           router.push('/dashboard')
           
           // 显示成功消息
+          notification.success('登录成功！欢迎回来')
           console.log('登录成功')
         } else {
           // 处理业务错误

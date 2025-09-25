@@ -25,16 +25,6 @@ public class TTSResponse {
     private TTSConfig.AudioFormat audioFormat;
     
     /**
-     * 音频时长（秒）
-     */
-    private Double duration;
-    
-    /**
-     * 采样率
-     */
-    private Integer sampleRate;
-    
-    /**
      * 生成成功标识
      */
     private Boolean success;

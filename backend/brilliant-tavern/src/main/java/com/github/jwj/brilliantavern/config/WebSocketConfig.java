@@ -35,7 +35,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setAllowedOrigins(allowedOrigins)
                 .withSockJS();
         
-        // 原生WebSocket端点（用于音频流传输）
+        // 原生WebSocket端点（用于原始音频流传输，支持二进制数据）
         registry.addEndpoint("/ws/voice-stream")
                 .setAllowedOrigins(allowedOrigins);
     }

@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.service.tts;
 
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 /**
@@ -26,17 +27,4 @@ public interface TTSService {
         return textToSpeech(text, null);
     }
 
-    /**
-     * 获取支持的音色列表
-     * 
-     * @return 音色ID列表
-     */
-    Mono<String[]> getSupportedVoices();
-
-    /**
-     * 检查TTS服务是否可用
-     * 
-     * @return 服务状态
-     */
-    Mono<Boolean> isServiceAvailable();
 }

@@ -231,3 +231,6 @@ export const tokenUtils = {
     return storage.get('token')
   }
 }
+
+// 导出通知系统
+export { notification } from './notification'

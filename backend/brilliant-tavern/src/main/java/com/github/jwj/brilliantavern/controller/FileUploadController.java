@@ -25,7 +25,7 @@ import java.util.Map;
 @Tag(name = "文件上传", description = "文件上传相关接口")
 @Slf4j
 @RestController
-@RequestMapping("/api/upload")
+@RequestMapping("/upload")
 @RequiredArgsConstructor
 @SecurityRequirement(name = "Bearer Authentication")
 public class FileUploadController {

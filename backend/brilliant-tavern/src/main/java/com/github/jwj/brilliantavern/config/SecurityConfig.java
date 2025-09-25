@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Spring Security配置类
@@ -66,6 +67,14 @@ public class SecurityConfig {
                         .requestMatchers("/public/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/test/public").permitAll()
+                        .requestMatchers("/test/tts").permitAll()
+                        // 静态资源访问路径
+                        .requestMatchers("/static/**").permitAll()
+                        .requestMatchers("/css/**").permitAll()
+                        .requestMatchers("/js/**").permitAll()
+                        .requestMatchers("/images/**").permitAll()
+                        .requestMatchers("/*.html").permitAll()
+                        .requestMatchers("/tts-test.html").permitAll()
                         // 文件访问路径
                         .requestMatchers("/uploads/**").permitAll()
                         // WebSocket 相关路径
@@ -79,8 +88,6 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/swagger-resources/**").permitAll()
                         .requestMatchers("/webjars/**").permitAll()
-                        // 明确拒绝已知的恶意请求路径，避免进入认证流程
-                        .requestMatchers("/dynamicParam/**").denyAll()
                         .anyRequest().authenticated()
                 );
 
@@ -92,10 +99,11 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        //TODO: 改为配置文件配置
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:*", "https://localhost:*"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

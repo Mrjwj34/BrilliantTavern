@@ -1,7 +1,13 @@
+# 服务器配置
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
 spring:
   application:
     name: brilliant-tavern
-  
+
   # 数据库配置
   datasource:
     url: jdbc:postgresql://localhost:5432/brilliant_tavern
@@ -17,10 +23,6 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
-        use_sql_comments: false
-        jdbc:
-          time_zone: Asia/Shanghai
   
   # Jackson配置
   jackson:
@@ -39,9 +41,9 @@ spring:
   # Redis配置
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST}
       port: 6379
-      password: 
+      password: ${REDIS_PASSWORD}
       database: 0
       jedis:
         pool:
@@ -58,24 +60,21 @@ spring:
     vertex:
       ai:
         gemini:
-          project-id: ${VERTEX_AI_PROJECT_ID:blissful-mile-468505-e2}
+          project-id: ${VERTEX_AI_PROJECT_ID}
           location: ${VERTEX_AI_LOCATION:us-central1}
+          credentials-uri: ${VERTEX_AI_CREDENTIALS_URI}
           chat:
             options:
-              model: gemini-2.0-flash
+              model: gemini-2.5-flash
               temperature: 0.7
               max-output-tokens: 2048
               candidate-count: 1
 
-# 服务器配置
-server:
-  port: 8080
-  servlet:
-    context-path: /api
+
 
 # JWT配置
 jwt:
-  secret: BrilliantTavernJWTSecretKey2024ForProductionPleaseUseAStrongerKey
+  secret: BrilliantTavernJWTSecretKey2024ForProduction
   expiration: 86400000  # 24小时 (单位：毫秒)
   header: Authorization
   token-prefix: "Bearer "
@@ -84,28 +83,24 @@ jwt:
 app:
   # TTS服务配置
   tts:
-    provider: mock  # 开发阶段使用mock实现
-    default-voice: voice-001
-    
-  # Spring AI ChatMemory配置
-  ai:
-    chat:
-      memory:
-        repository:
-          jdbc:
-            initialize-schema: always
-  cors:
-    allowed-origins: http://localhost:3000,http://localhost:5173
-    allowed-methods: GET,POST,PUT,DELETE,OPTIONS
-    allowed-headers: "*"
-    allow-credentials: true
+    base-url: http://ry2.9gpu.com:27046  # TTS服务基础URL
+    timeout: 30s
+    # 音频配置
+    audio:
+      format: wav
+      chunk-length: 200
+      normalize: true
+      streaming: false
+      max-new-tokens: 1024
+      top-p: 0.8
+      repetition-penalty: 1.1
+      temperature: 0.8
   
   # 文件上传配置
   upload:
     max-file-size: 10MB
-    max-request-size: 10MB
-    
-  # WebSocket配置  
+
+  # WebSocket配置
   websocket:
     allowed-origins: http://localhost:3000,http://localhost:5173
 

@@ -5,6 +5,7 @@ import { storage, tokenUtils } from '@/utils'
 const Login = () => import('@/views/Login.vue')
 const Register = () => import('@/views/Register.vue')
 const Dashboard = () => import('@/views/Dashboard.vue')
+const VoiceChat = () => import('@/views/VoiceChat.vue')
 
 const routes = [
   {
@@ -37,6 +38,16 @@ const routes = [
     component: Dashboard,
     meta: {
       title: '仪表盘',
+      requiresAuth: true,
+      transition: 'slide-right'
+    }
+  },
+  {
+    path: '/voice',
+    name: 'VoiceChat',
+    component: VoiceChat,
+    meta: {
+      title: '语音对话',
       requiresAuth: true,
       transition: 'slide-right'
     }

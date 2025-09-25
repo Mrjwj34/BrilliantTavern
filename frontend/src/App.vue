@@ -5,12 +5,20 @@
         <component :is="Component" :key="route.path" />
       </transition>
     </router-view>
+    
+    <!-- 全局通知组件 -->
+    <GlobalNotification />
   </div>
 </template>
 
 <script>
+import GlobalNotification from '@/components/GlobalNotification.vue'
+
 export default {
-  name: 'App'
+  name: 'App',
+  components: {
+    GlobalNotification
+  }
 }
 </script>
 
