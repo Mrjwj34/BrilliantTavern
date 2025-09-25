@@ -112,7 +112,7 @@
                   <line x1="16" y1="17" x2="8" y2="17"/>
                   <polyline points="10,9 9,9 8,9"/>
                 </svg>
-                朗读文本
+                语音参考文本
               </div>
               <div class="text-options">
                 <label class="radio-option">
@@ -297,7 +297,9 @@ export default {
     const fileInput = ref(null)
     
     // 默认参考文本
-    const defaultReferenceText = '春天来了，万物复苏。鸟儿在枝头歌唱，花儿在阳光下绽放。微风轻抚着脸庞，带来了温暖的气息。在这美好的季节里，人们纷纷走出家门，感受大自然的魅力。'
+  const defaultReferenceText = '春天来了，万物复苏。鸟儿在枝头歌唱，花儿在阳光下绽放。微风轻抚着脸庞，带来了温暖的气息。在这美好的季节里，人们纷纷走出家门，感受大自然的魅力。'
+  const TARGET_SAMPLE_RATE = 24000
+  let audioContextInstance = null
     
     // 计算属性
     const canSave = computed(() => {
@@ -476,30 +478,68 @@ export default {
     const startRecording = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        mediaRecorder.value = new MediaRecorder(stream)
-        
-        const chunks = []
-        mediaRecorder.value.ondataavailable = (event) => {
-          chunks.push(event.data)
+        const recorderOptions = {}
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            recorderOptions.mimeType = 'audio/webm;codecs=opus'
+          } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            recorderOptions.mimeType = 'audio/ogg;codecs=opus'
+          } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            recorderOptions.mimeType = 'audio/webm'
+          }
         }
-        
-        mediaRecorder.value.onstop = () => {
-          const blob = new Blob(chunks, { type: 'audio/wav' })
-          recordedBlob.value = blob
-          
+
+        mediaRecorder.value = new MediaRecorder(stream, recorderOptions)
+        const chunks = []
+
+        mediaRecorder.value.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            chunks.push(event.data)
+          }
+        }
+
+        mediaRecorder.value.onstop = async () => {
           // 停止所有轨道
           stream.getTracks().forEach(track => track.stop())
+
+          if (!chunks.length) {
+            recordedBlob.value = null
+            return
+          }
+
+          try {
+            const mimeType = recorderOptions.mimeType || mediaRecorder.value?.mimeType || 'audio/webm'
+            const rawBlob = new Blob(chunks, { type: mimeType })
+            const wavBlob = await convertBlobToWav(rawBlob, TARGET_SAMPLE_RATE)
+            recordedBlob.value = wavBlob
+
+            if (recordingUrl.value) {
+              URL.revokeObjectURL(recordingUrl.value)
+              recordingUrl.value = ''
+            }
+
+            recordingPlaying.value = false
+            playing.value = false
+            currentTime.value = 0
+            duration.value = 0
+          } catch (conversionError) {
+            console.error('录音转换失败:', conversionError)
+            recordedBlob.value = null
+            notification.error('录音转换失败，请尝试重新录制或上传音频文件')
+          } finally {
+            chunks.length = 0
+          }
         }
-        
+
         mediaRecorder.value.start()
         isRecording.value = true
         recordingTime.value = 0
-        
+
         // 开始计时
         recordingTimer.value = setInterval(() => {
           recordingTime.value++
         }, 1000)
-        
+
       } catch (error) {
         console.error('录音启动失败:', error)
         alert('无法访问麦克风，请检查权限设置')
@@ -687,6 +727,134 @@ export default {
     }
     
     // 工具函数
+    const getAudioContext = async () => {
+      if (audioContextInstance && audioContextInstance.state === 'closed') {
+        audioContextInstance = null
+      }
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      if (!AudioContextClass) {
+        throw new Error('当前浏览器不支持音频处理')
+      }
+      if (!audioContextInstance) {
+        audioContextInstance = new AudioContextClass()
+      }
+      if (audioContextInstance.state === 'suspended') {
+        try {
+          await audioContextInstance.resume()
+        } catch (_) {
+          // ignore resume error
+        }
+      }
+      return audioContextInstance
+    }
+
+    const decodeAudioBuffer = (audioContext, arrayBuffer) => {
+      return new Promise((resolve, reject) => {
+        audioContext.decodeAudioData(arrayBuffer.slice(0), resolve, reject)
+      })
+    }
+
+    const resampleAudioBuffer = async (audioBuffer, targetSampleRate) => {
+      if (!targetSampleRate || audioBuffer.sampleRate === targetSampleRate) {
+        return audioBuffer
+      }
+      try {
+        const OfflineAudioContextClass = window.OfflineAudioContext || window.webkitOfflineAudioContext
+        if (!OfflineAudioContextClass) {
+          console.warn('浏览器不支持 OfflineAudioContext，跳过重采样')
+          return audioBuffer
+        }
+        const length = Math.ceil(audioBuffer.length * targetSampleRate / audioBuffer.sampleRate)
+        const offlineContext = new OfflineAudioContextClass(audioBuffer.numberOfChannels, length, targetSampleRate)
+        const bufferSource = offlineContext.createBufferSource()
+        bufferSource.buffer = audioBuffer
+        bufferSource.connect(offlineContext.destination)
+        bufferSource.start(0)
+        return await offlineContext.startRendering()
+      } catch (error) {
+        console.warn('重采样失败，使用原始音频缓冲区', error)
+        return audioBuffer
+      }
+    }
+
+    const floatTo16BitPCM = (view, offset, input) => {
+      for (let i = 0; i < input.length; i++, offset += 2) {
+        let sample = Math.max(-1, Math.min(1, input[i]))
+        sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF
+        view.setInt16(offset, sample, true)
+      }
+    }
+
+    const writeString = (view, offset, string) => {
+      for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i))
+      }
+    }
+
+    const audioBufferToWav = (audioBuffer) => {
+      const channelCount = audioBuffer.numberOfChannels
+      const sampleRate = audioBuffer.sampleRate
+      const samples = audioBuffer.length
+
+      let monoData
+      if (channelCount === 1) {
+        monoData = audioBuffer.getChannelData(0)
+      } else {
+        monoData = new Float32Array(samples)
+        for (let channel = 0; channel < channelCount; channel++) {
+          const channelData = audioBuffer.getChannelData(channel)
+          for (let i = 0; i < samples; i++) {
+            monoData[i] += channelData[i]
+          }
+        }
+        for (let i = 0; i < samples; i++) {
+          monoData[i] /= channelCount
+        }
+      }
+
+      const dataLength = monoData.length * 2
+      const buffer = new ArrayBuffer(44 + dataLength)
+      const view = new DataView(buffer)
+
+      writeString(view, 0, 'RIFF')
+      view.setUint32(4, 36 + dataLength, true)
+      writeString(view, 8, 'WAVE')
+      writeString(view, 12, 'fmt ')
+      view.setUint32(16, 16, true) // PCM chunk length
+      view.setUint16(20, 1, true) // PCM format
+      view.setUint16(22, 1, true) // mono
+      view.setUint32(24, sampleRate, true)
+      view.setUint32(28, sampleRate * 2, true) // byte rate
+      view.setUint16(32, 2, true) // block align
+      view.setUint16(34, 16, true) // bits per sample
+      writeString(view, 36, 'data')
+      view.setUint32(40, dataLength, true)
+
+      floatTo16BitPCM(view, 44, monoData)
+      return buffer
+    }
+
+    const convertBlobToWav = async (blob, targetSampleRate) => {
+      const audioContext = await getAudioContext()
+      const arrayBuffer = await blob.arrayBuffer()
+      const decodedBuffer = await decodeAudioBuffer(audioContext, arrayBuffer)
+      const processedBuffer = await resampleAudioBuffer(decodedBuffer, targetSampleRate)
+      const wavBuffer = audioBufferToWav(processedBuffer)
+      return new Blob([wavBuffer], { type: 'audio/wav' })
+    }
+
+    const closeAudioResources = async () => {
+      if (audioContextInstance && audioContextInstance.state !== 'closed') {
+        try {
+          await audioContextInstance.close()
+        } catch (error) {
+          console.warn('关闭音频上下文失败', error)
+        } finally {
+          audioContextInstance = null
+        }
+      }
+    }
+
     const formatFileSize = (bytes) => {
       if (bytes < 1024) return bytes + ' B'
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -738,6 +906,8 @@ export default {
       if (isRecording.value) {
         stopRecording()
       }
+
+      closeAudioResources()
     })
     
     return {

@@ -231,18 +231,13 @@
             </div>
 
             <div class="form-group">
-              <label for="ttsVoiceId" class="form-label">语音音色</label>
-              <select
-                id="ttsVoiceId"
+              <label class="form-label">语音音色</label>
+              <VoiceSelector
                 v-model="formData.ttsVoiceId"
-                class="form-select"
-                :class="{ 'error': errors.ttsVoiceId }"
-              >
-                <option value="">选择语音音色（可选）</option>
-                <option v-for="voice in availableVoices" :key="voice.id" :value="voice.id">
-                  {{ voice.name }}
-                </option>
-              </select>
+                :voices="availableVoices"
+                placeholder="选择语音音色（可选）"
+                :disabled="loading"
+              />
             </div>
           </div>
         </div>
@@ -394,16 +389,20 @@
 
 <script>
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { characterCardAPI, voiceAPI, uploadAPI } from '@/api'
-import { validation } from '@/utils'
+import { characterCardAPI, ttsAPI, uploadAPI } from '@/api'
+import { validation, storage } from '@/utils'
+import VoiceSelector from './VoiceSelector.vue'
 
 export default {
   name: 'CharacterCreator',
+  components: {
+    VoiceSelector
+  },
   emits: ['created'],
   setup(props, { emit }) {
     const loading = ref(false)
     const errors = ref({})
-    const availableVoices = ref([]) // 语音列表
+  const availableVoices = ref([]) // 语音列表
     const isDragOver = ref(false) // 拖拽状态
     const uploadedImage = ref(null) // 上传的图片base64
     const fileInput = ref(null) // 文件输入引用
@@ -700,23 +699,54 @@ export default {
     // 获取语音列表
     const loadVoices = async () => {
       try {
-        const response = await voiceAPI.getVoiceList()
-        if (response && response.code === 200) {
-          availableVoices.value = response.data.map(voice => ({
-            id: voice.id,
-            name: `${voice.name}（${voice.description}）`
-          }))
+        // 获取当前用户的音色列表和公开音色列表
+        const user = storage.get('user')
+        if (!user || !user.userId) {
+          console.warn('用户未登录，无法获取语音列表')
+          availableVoices.value = []
+          return
         }
+
+        // 并发获取用户音色和公开音色
+        const [userVoicesResponse, publicVoicesResponse] = await Promise.all([
+          ttsAPI.getUserVoices(user.userId).catch(() => ({ data: [] })),
+          ttsAPI.getPublicVoices().catch(() => ({ data: [] }))
+        ])
+
+        // 处理用户音色
+        let userVoices = []
+        if (Array.isArray(userVoicesResponse)) {
+          userVoices = userVoicesResponse
+        } else if (userVoicesResponse.data && Array.isArray(userVoicesResponse.data)) {
+          userVoices = userVoicesResponse.data
+        }
+
+        // 处理公开音色
+        let publicVoices = []
+        if (Array.isArray(publicVoicesResponse)) {
+          publicVoices = publicVoicesResponse
+        } else if (publicVoicesResponse.data && Array.isArray(publicVoicesResponse.data)) {
+          publicVoices = publicVoicesResponse.data
+        }
+
+        // 合并音色列表，去重（用户音色优先）
+        const allVoices = [...userVoices]
+        publicVoices.forEach(publicVoice => {
+          if (!allVoices.find(voice => voice.id === publicVoice.id)) {
+            allVoices.push(publicVoice)
+          }
+        })
+
+        // 转换为选项格式
+        availableVoices.value = allVoices.map(voice => ({
+          id: voice.id,
+          name: voice.description ? `${voice.name}（${voice.description}）` : voice.name
+        }))
+
+        console.log('加载语音列表成功:', availableVoices.value.length)
       } catch (error) {
         console.error('获取语音列表失败:', error)
-        // 使用占位符数据作为后备
-        availableVoices.value = [
-          { id: 'voice_001', name: '小雨（温柔甜美的女声）' },
-          { id: 'voice_002', name: '小明（阳光活泼的男声）' },
-          { id: 'voice_003', name: '小慧（知性优雅的女声）' },
-          { id: 'voice_004', name: '小峰（成熟稳重的男声）' },
-          { id: 'voice_005', name: '小萌（可爱活泼的女声）' }
-        ]
+        availableVoices.value = []
       }
     }
 
@@ -1034,6 +1064,59 @@ export default {
 /* 角色设定部分使用紧凑布局 */
 .form-section.compact-section .form-group {
   margin-bottom: calc($spacing * 0.75);
+}
+
+.voice-select-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.voice-search {
+  display: flex;
+  align-items: center;
+  background: var(--background-tertiary);
+  border-radius: 8px;
+  height: 38px;
+  padding: 0 $spacing-sm;
+  border: 1px solid transparent;
+  transition: all $transition-fast ease;
+
+  &:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15);
+  }
+
+  svg {
+    color: var(--text-tertiary);
+    margin-right: $spacing-sm;
+  }
+
+  input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    outline: none;
+    font-size: 0.9rem;
+
+    &::placeholder {
+      color: var(--text-placeholder);
+    }
+  }
+
+  .clear-search {
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+  }
 }
 
 .form-label {

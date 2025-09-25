@@ -6,19 +6,42 @@
         <p class="browse-subtitle">发现社区分享的优质音色</p>
       </div>
       <div class="header-actions">
-        <div class="search-box">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
-            <circle cx="11" cy="11" r="8"/>
-            <path d="M21 21l-4.35-4.35"/>
-          </svg>
-          <input 
-            v-model="searchKeyword" 
-            type="text" 
-            placeholder="搜索音色..."
-            @keyup.enter="handleSearch"
-            class="search-input"
-          />
-          <button @click="handleSearch" class="search-btn">搜索</button>
+        <div class="search-controls">
+          <div class="search-field">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="M21 21l-4.35-4.35"/>
+            </svg>
+            <input 
+              v-model="searchKeyword" 
+              type="text" 
+              placeholder="搜索音色..."
+              class="search-input"
+              @input="handleSearchInput"
+              @keyup.enter="executeSearch"
+            />
+            <button
+              v-if="searchKeyword"
+              type="button"
+              class="clear-input"
+              @click="clearSearch"
+              aria-label="清除搜索"
+            >
+              &times;
+            </button>
+          </div>
+          <div class="sort-filters">
+            <button
+              type="button"
+              :class="{ active: sortOption === 'newest' }"
+              @click="changeSort('newest')"
+            >最新</button>
+            <button
+              type="button"
+              :class="{ active: sortOption === 'likes' }"
+              @click="changeSort('likes')"
+            >最受欢迎</button>
+          </div>
         </div>
         <button @click="refreshVoices" class="refresh-btn" :disabled="loading">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ spin: loading }">
@@ -59,140 +82,108 @@
 
       <!-- 音色列表 -->
       <div v-else class="voices-grid">
-        <div 
-          v-for="voice in voices" 
-          :key="voice.id" 
-          class="voice-card"
-          @click="selectVoice(voice)"
-          :class="{ selected: selectedVoice?.id === voice.id }"
-        >
-          <div class="voice-header">
-            <div class="voice-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-            </div>
-            <div class="voice-actions">
-              <button @click.stop="testVoice(voice)" class="test-btn" title="试听">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3,19 12,5 21,5 3"/>
-                </svg>
-              </button>
-              <button @click.stop="useVoice(voice)" class="use-btn" title="使用">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M9 11l3 3L22 4"/>
-                  <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c1.5 0 2.91.37 4.15 1.02"/>
-                </svg>
-              </button>
-              <button @click.stop="favoriteVoice(voice)" class="favorite-btn" :class="{ active: voice.isFavorited }" title="收藏">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-          
-          <div class="voice-info">
-            <h4 class="voice-name">{{ voice.name }}</h4>
-            <p v-if="voice.description" class="voice-description">{{ voice.description }}</p>
-            <div class="voice-meta">
-              <div class="voice-creator">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                  <circle cx="12" cy="7" r="4"/>
-                </svg>
-                <span>{{ voice.creatorName || '匿名' }}</span>
-              </div>
-              <span class="voice-date">{{ formatDate(voice.createdAt) }}</span>
-            </div>
-            
-            <!-- 使用统计 -->
-            <div class="voice-stats">
-              <div class="stat-item">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3,19 12,5 21,5 3"/>
-                </svg>
-                <span>{{ voice.playCount || 0 }}</span>
-              </div>
-              <div class="stat-item">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                </svg>
-                <span>{{ voice.favoriteCount || 0 }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <VoiceCard
+          v-for="voice in voices"
+          :key="voice.id"
+          :voice="voice"
+          mode="browse"
+          @favorite="favoriteVoice"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { ttsAPI } from '@/api'
 import { storage } from '@/utils'
+import { notification } from '@/utils/notification'
+import VoiceCard from './VoiceCard.vue'
 
 export default {
   name: 'BrowseVoices',
+  components: {
+    VoiceCard
+  },
   emits: ['select-voice'],
   setup(props, { emit }) {
     const voices = ref([])
     const selectedVoice = ref(null)
     const loading = ref(false)
     const searchKeyword = ref('')
-    const isSearching = ref(false)
-    
-    // 获取公开音色列表
+    const sortOption = ref('newest')
+    const searchDebounce = ref(null)
+    const likeRequesting = ref(false)
+
+    const extractVoices = (response) => {
+      if (Array.isArray(response)) return response
+      if (response?.data && Array.isArray(response.data)) return response.data
+      if (Array.isArray(response?.records)) return response.records
+      if (response?.data?.records && Array.isArray(response.data.records)) return response.data.records
+      console.warn('意外的响应格式:', response)
+      return []
+    }
+
+    const normalizeVoice = (voice) => ({
+      ...voice,
+      likesCount: voice?.likesCount ?? voice?.favoriteCount ?? 0,
+      isFavorited: Boolean(voice?.isFavorited ?? voice?.liked),
+      creatorName: voice?.creatorName || voice?.creatorUsername || voice?.creator?.username || '匿名用户'
+    })
+
+    const processVoiceList = (list) => list.map(normalizeVoice)
+
+    const getUserId = () => storage.get('user')?.userId || ''
+
     const fetchVoices = async () => {
       loading.value = true
       try {
-        const response = await ttsAPI.getPublicVoices()
-        voices.value = (response.data || []).map(voice => ({
-          ...voice,
-          isFavorited: false, // TODO: 从后端获取收藏状态
-          playCount: Math.floor(Math.random() * 1000), // 模拟数据
-          favoriteCount: Math.floor(Math.random() * 100), // 模拟数据
-          creatorName: voice.creatorName || '匿名用户' // 假设后端返回创建者姓名
-        }))
+        const params = {
+          sort: sortOption.value
+        }
+        const userId = getUserId()
+        if (userId) {
+          params.userId = userId
+        }
+        const response = await ttsAPI.getPublicVoices(params)
+        const voiceData = extractVoices(response)
+        voices.value = processVoiceList(voiceData)
       } catch (error) {
         console.error('获取公开音色列表失败:', error)
+        notification.error(error?.response?.data?.message || '获取公开音色失败，请稍后重试')
         voices.value = []
       } finally {
         loading.value = false
       }
     }
-    
-    // 搜索音色
+
     const searchVoices = async (keyword) => {
-      if (!keyword.trim()) {
+      const trimmed = keyword.trim()
+      if (!trimmed) {
         await fetchVoices()
         return
       }
-      
+
       loading.value = true
       try {
-        const user = storage.get('user')
-        const response = await ttsAPI.searchVoices(keyword, user?.userId || '', true)
-        voices.value = (response.data || []).map(voice => ({
-          ...voice,
-          isFavorited: false,
-          playCount: Math.floor(Math.random() * 1000),
-          favoriteCount: Math.floor(Math.random() * 100),
-          creatorName: voice.creatorName || '匿名用户'
-        }))
+        const response = await ttsAPI.searchVoices(
+          trimmed,
+          getUserId(),
+          true,
+          sortOption.value
+        )
+        const voiceData = extractVoices(response)
+        voices.value = processVoiceList(voiceData)
       } catch (error) {
         console.error('搜索音色失败:', error)
+        notification.error(error?.response?.data?.message || '搜索音色失败，请稍后重试')
         voices.value = []
       } finally {
         loading.value = false
       }
     }
-    
-    // 刷新音色列表
+
     const refreshVoices = () => {
       if (searchKeyword.value.trim()) {
         searchVoices(searchKeyword.value)
@@ -200,110 +191,108 @@ export default {
         fetchVoices()
       }
     }
-    
-    // 处理搜索
-    const handleSearch = () => {
+
+    const executeSearch = () => {
+      if (searchDebounce.value) {
+        clearTimeout(searchDebounce.value)
+        searchDebounce.value = null
+      }
       searchVoices(searchKeyword.value)
     }
-    
-    // 清除搜索
+
+    const handleSearchInput = () => {
+      if (searchDebounce.value) {
+        clearTimeout(searchDebounce.value)
+      }
+      searchDebounce.value = setTimeout(() => {
+        searchVoices(searchKeyword.value)
+        searchDebounce.value = null
+      }, 300)
+    }
+
     const clearSearch = () => {
       searchKeyword.value = ''
-      fetchVoices()
+      executeSearch()
     }
-    
-    // 选择音色
+
+    const changeSort = (value) => {
+      if (sortOption.value === value) return
+      sortOption.value = value
+      refreshVoices()
+    }
+
     const selectVoice = (voice) => {
       selectedVoice.value = voice
       emit('select-voice', voice)
     }
-    
-    // 试听音色
-    const testVoice = async (voice) => {
+
+    const favoriteVoice = async (voice) => {
+      const userId = getUserId()
+      if (!userId) {
+        notification.warning('请先登录后再收藏音色')
+        return
+      }
+
+      if (likeRequesting.value) return
+      likeRequesting.value = true
+
       try {
-        const response = await ttsAPI.generateSpeech('这是一段测试音频，用于预览音色效果', voice.id)
-        
-        // 创建音频播放
-        const audioBlob = new Blob([response.data], { type: 'audio/wav' })
-        const audioUrl = URL.createObjectURL(audioBlob)
-        const audio = new Audio(audioUrl)
-        
-        audio.play().then(() => {
-          // 播放完成后清理
-          audio.onended = () => {
-            URL.revokeObjectURL(audioUrl)
+        const response = voice.isFavorited
+          ? await ttsAPI.unlikeVoice(voice.id, userId)
+          : await ttsAPI.likeVoice(voice.id, userId)
+
+        const updatedVoice = response && response.id ? normalizeVoice(response) : null
+
+        if (updatedVoice && updatedVoice.id) {
+          const index = voices.value.findIndex(item => item.id === updatedVoice.id)
+          if (index !== -1) {
+            voices.value[index] = {
+              ...voices.value[index],
+              ...updatedVoice
+            }
           }
-          
-          // 更新播放次数（模拟）
-          voice.playCount = (voice.playCount || 0) + 1
-        }).catch(error => {
-          console.error('音频播放失败:', error)
-          URL.revokeObjectURL(audioUrl)
-          alert('音频播放失败')
-        })
-        
+          if (selectedVoice.value?.id === updatedVoice.id) {
+            selectedVoice.value = {
+              ...selectedVoice.value,
+              ...updatedVoice
+            }
+          }
+        } else {
+          voice.isFavorited = !voice.isFavorited
+          const delta = voice.isFavorited ? 1 : -1
+          voice.likesCount = Math.max(0, (voice.likesCount || 0) + delta)
+        }
       } catch (error) {
-        console.error('试听失败:', error)
-        alert('试听失败: ' + error.message)
+        console.error('更新音色点赞状态失败:', error)
+        notification.error(error?.response?.data?.message || '操作失败，请稍后重试')
+      } finally {
+        likeRequesting.value = false
       }
     }
-    
-    // 使用音色
-    const useVoice = (voice) => {
-      selectVoice(voice)
-      // TODO: 可以添加更多使用音色的逻辑
-      alert(`已选择音色: ${voice.name}`)
-    }
-    
-    // 收藏音色
-    const favoriteVoice = (voice) => {
-      // TODO: 调用后端API收藏/取消收藏
-      voice.isFavorited = !voice.isFavorited
-      if (voice.isFavorited) {
-        voice.favoriteCount = (voice.favoriteCount || 0) + 1
-      } else {
-        voice.favoriteCount = Math.max(0, (voice.favoriteCount || 0) - 1)
-      }
-      
-      console.log(`${voice.isFavorited ? '收藏' : '取消收藏'}音色:`, voice.name)
-    }
-    
-    // 格式化日期
-    const formatDate = (dateString) => {
-      const date = new Date(dateString)
-      const now = new Date()
-      const diffTime = Math.abs(now - date)
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      
-      if (diffDays === 1) return '今天'
-      if (diffDays <= 7) return `${diffDays}天前`
-      if (diffDays <= 30) return `${Math.ceil(diffDays / 7)}周前`
-      if (diffDays <= 365) return `${Math.ceil(diffDays / 30)}个月前`
-      
-      return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      })
-    }
-    
+
     onMounted(() => {
       fetchVoices()
     })
-    
+
+    onUnmounted(() => {
+      if (searchDebounce.value) {
+        clearTimeout(searchDebounce.value)
+      }
+    })
+
     return {
       voices,
       selectedVoice,
       loading,
       searchKeyword,
+      sortOption,
       refreshVoices,
-      handleSearch,
+      handleSearchInput,
+      executeSearch,
       clearSearch,
+      changeSort,
       selectVoice,
-      testVoice,
-      useVoice,
-      favoriteVoice,
-      formatDate
+      favoriteVoice
     }
   }
 }
@@ -349,52 +338,85 @@ export default {
   gap: $spacing;
 }
 
-.search-box {
+.search-controls {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  min-width: 280px;
+}
+
+.search-field {
   display: flex;
   align-items: center;
   background: var(--background-secondary);
-  border: 1px solid var(--border-color);
   border-radius: $border-radius;
-  padding: $spacing-xs;
-  gap: $spacing-xs;
-  min-width: 280px;
-  
+  padding: 0 $spacing-sm;
+  height: 40px;
+  border: 1px solid transparent;
+  transition: all $transition-fast ease;
+
   &:focus-within {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
   }
-  
+
   .search-icon {
     color: var(--text-tertiary);
     flex-shrink: 0;
+    margin-right: $spacing-sm;
   }
-  
+
   .search-input {
     flex: 1;
     border: none;
     background: transparent;
     color: var(--text-primary);
     outline: none;
-    font-size: 0.9rem;
-    
+    font-size: 0.95rem;
+
     &::placeholder {
       color: var(--text-placeholder);
     }
   }
-  
-  .search-btn {
-    background: var(--primary-color);
-    color: white;
+
+  .clear-input {
+    background: transparent;
     border: none;
+    color: var(--text-tertiary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+
+    &:hover {
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.sort-filters {
+  display: flex;
+  gap: $spacing-xs;
+
+  button {
+    padding: 6px 12px;
     border-radius: $border-radius-sm;
-    padding: $spacing-xs $spacing-sm;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-tertiary);
     font-size: 0.85rem;
-    font-weight: 500;
     cursor: pointer;
     transition: all $transition-fast ease;
-    
+
     &:hover {
-      background: var(--primary-dark);
+      color: var(--text-primary);
+      background: var(--background-tertiary);
+    }
+
+    &.active {
+      color: var(--primary-color);
+      background: rgba(217, 119, 6, 0.12);
+      border-color: rgba(217, 119, 6, 0.3);
     }
   }
 }
@@ -492,160 +514,6 @@ export default {
   gap: $spacing-lg;
 }
 
-.voice-card {
-  background: var(--background-secondary);
-  border: 1px solid var(--border-light);
-  border-radius: $border-radius-lg;
-  padding: $spacing-lg;
-  cursor: pointer;
-  transition: all $transition-normal ease;
-  
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-medium);
-    border-color: var(--primary-color);
-  }
-  
-  &.selected {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
-  }
-}
-
-.voice-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: $spacing;
-}
-
-.voice-icon {
-  width: 40px;
-  height: 40px;
-  background: var(--secondary-color);
-  color: white;
-  border-radius: $border-radius;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.voice-actions {
-  display: flex;
-  gap: $spacing-xs;
-}
-
-.test-btn,
-.use-btn,
-.favorite-btn {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: $border-radius-sm;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all $transition-normal ease;
-}
-
-.test-btn {
-  background: var(--success-color);
-  color: white;
-  
-  &:hover {
-    background: darken(#059669, 10%);
-    transform: scale(1.1);
-  }
-}
-
-.use-btn {
-  background: var(--primary-color);
-  color: white;
-  
-  &:hover {
-    background: var(--primary-dark);
-    transform: scale(1.1);
-  }
-}
-
-.favorite-btn {
-  background: var(--background-tertiary);
-  color: var(--text-secondary);
-  
-  &:hover,
-  &.active {
-    background: var(--error-color);
-    color: white;
-    transform: scale(1.1);
-  }
-}
-
-.voice-info {
-  .voice-name {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0 0 $spacing-sm 0;
-  }
-  
-  .voice-description {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    line-height: 1.4;
-    margin: 0 0 $spacing 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  
-  .voice-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: $spacing;
-    font-size: 0.8rem;
-    
-    .voice-creator {
-      display: flex;
-      align-items: center;
-      gap: $spacing-xs;
-      color: var(--text-secondary);
-      
-      svg {
-        flex-shrink: 0;
-      }
-      
-      span {
-        font-weight: 500;
-      }
-    }
-    
-    .voice-date {
-      color: var(--text-tertiary);
-    }
-  }
-  
-  .voice-stats {
-    display: flex;
-    gap: $spacing-lg;
-    
-    .stat-item {
-      display: flex;
-      align-items: center;
-      gap: $spacing-xs;
-      color: var(--text-tertiary);
-      font-size: 0.8rem;
-      
-      svg {
-        flex-shrink: 0;
-      }
-    }
-  }
-}
-
 // 动画
 @keyframes spin {
   from {
@@ -670,9 +538,11 @@ export default {
   
   .header-actions {
     flex-direction: column;
+    align-items: stretch;
+    gap: $spacing-sm;
   }
   
-  .search-box {
+  .search-controls {
     min-width: auto;
     width: 100%;
   }

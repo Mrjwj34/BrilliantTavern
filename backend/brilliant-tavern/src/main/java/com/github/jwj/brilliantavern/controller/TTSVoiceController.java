@@ -1,6 +1,5 @@
 package com.github.jwj.brilliantavern.controller;
 
-import com.github.jwj.brilliantavern.dto.ApiResponse;
 import com.github.jwj.brilliantavern.entity.TTSVoice;
 import com.github.jwj.brilliantavern.service.TTSManagerService;
 import com.github.jwj.brilliantavern.service.tts.TTSResponse;
@@ -9,11 +8,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -39,14 +40,14 @@ public class TTSVoiceController {
         description = "上传音频文件创建新的TTS音色，支持个人和公开两种模式"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "创建成功",
+        @ApiResponse(responseCode = "200", description = "创建成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class))),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "请求参数无效"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "服务器内部错误")
+        @ApiResponse(responseCode = "400", description = "请求参数无效"),
+        @ApiResponse(responseCode = "500", description = "服务器内部错误")
     })
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Mono<ResponseEntity<ApiResponse<TTSVoice>>> createVoice(
+    public Mono<ResponseEntity<com.github.jwj.brilliantavern.dto.ApiResponse<TTSVoice>>> createVoice(
             @Parameter(description = "用户ID", required = true)
             @RequestParam String userId,
             @Parameter(description = "语音名称", required = true)
@@ -65,12 +66,17 @@ public class TTSVoiceController {
                 audioFile != null ? audioFile.getSize() : -1);
 
         if (audioFile == null || audioFile.isEmpty()) {
-            return Mono.just(ResponseEntity.badRequest().body(ApiResponse.error(400, "音频文件为空")));
+            return Mono.just(ResponseEntity.badRequest()
+                    .body(com.github.jwj.brilliantavern.dto.ApiResponse.error(400, "音频文件为空")));
         }
         return Mono.fromCallable(audioFile::getBytes)
                 .flatMap(bytes -> ttsVoiceService.createVoice(userId, name, description, bytes, referenceText, isPublic))
-                .map(voice -> ResponseEntity.ok(ApiResponse.success("创建音色成功", voice)))
-                .onErrorReturn(ResponseEntity.badRequest().body(ApiResponse.error(400, "创建音色失败")));
+                .map(voice -> ResponseEntity.ok(com.github.jwj.brilliantavern.dto.ApiResponse.success("创建音色成功", voice)))
+                .onErrorResume(error -> {
+                    log.error("创建音色失败", error);
+                    String message = error.getMessage() != null ? error.getMessage() : "创建音色失败";
+                    return Mono.just(ResponseEntity.badRequest().body(com.github.jwj.brilliantavern.dto.ApiResponse.error(400, message)));
+                });
     }
 
     @Operation(
@@ -78,9 +84,9 @@ public class TTSVoiceController {
         description = "删除指定的TTS音色（软删除）"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "删除成功"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "没有权限删除此语音"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "语音不存在")
+        @ApiResponse(responseCode = "200", description = "删除成功"),
+        @ApiResponse(responseCode = "403", description = "没有权限删除此语音"),
+        @ApiResponse(responseCode = "404", description = "语音不存在")
     })
     @DeleteMapping("/{voiceId}")
     public Mono<ResponseEntity<Void>> deleteVoice(
@@ -101,7 +107,7 @@ public class TTSVoiceController {
         description = "获取指定用户可访问的语音列表"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "查询成功",
+        @ApiResponse(responseCode = "200", description = "查询成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class)))
     })
@@ -120,14 +126,18 @@ public class TTSVoiceController {
         description = "获取所有公开可用的TTS语音列表"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "查询成功",
+        @ApiResponse(responseCode = "200", description = "查询成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class)))
     })
     @GetMapping("/public")
-    public Flux<TTSVoice> getPublicVoices() {
-        log.debug("获取公开语音列表");
-        return ttsVoiceService.getPublicVoices();
+    public Flux<TTSVoice> getPublicVoices(
+            @Parameter(description = "用户ID，用于返回点赞状态")
+            @RequestParam(value = "userId", required = false) String userId,
+            @Parameter(description = "排序方式：newest 或 likes", schema = @Schema(defaultValue = "newest"))
+            @RequestParam(value = "sort", defaultValue = "newest") String sort) {
+        log.debug("获取公开语音列表: userId={}, sort={}", userId, sort);
+        return ttsVoiceService.getPublicVoices(userId, sort);
     }
 
     @Operation(
@@ -135,11 +145,11 @@ public class TTSVoiceController {
         description = "根据语音ID获取语音的详细信息"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "查询成功",
+        @ApiResponse(responseCode = "200", description = "查询成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class))),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "没有权限访问此语音"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "语音不存在")
+        @ApiResponse(responseCode = "403", description = "没有权限访问此语音"),
+        @ApiResponse(responseCode = "404", description = "语音不存在")
     })
     @GetMapping("/{voiceId}")
     public Mono<ResponseEntity<TTSVoice>> getVoice(
@@ -160,11 +170,11 @@ public class TTSVoiceController {
         description = "更新语音的名称、描述、公开状态等信息"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "更新成功",
+        @ApiResponse(responseCode = "200", description = "更新成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class))),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "没有权限修改此语音"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "语音不存在")
+        @ApiResponse(responseCode = "403", description = "没有权限修改此语音"),
+        @ApiResponse(responseCode = "404", description = "语音不存在")
     })
     @PutMapping("/{voiceId}")
     public Mono<ResponseEntity<TTSVoice>> updateVoice(
@@ -191,7 +201,7 @@ public class TTSVoiceController {
         description = "根据关键词搜索语音，支持名称、描述、标签等字段模糊查询"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "搜索成功",
+        @ApiResponse(responseCode = "200", description = "搜索成功",
                 content = @Content(mediaType = "application/json", 
                         schema = @Schema(implementation = TTSVoice.class)))
     })
@@ -202,11 +212,57 @@ public class TTSVoiceController {
             @Parameter(description = "用户ID", required = true)
             @RequestParam String userId,
             @Parameter(description = "是否包含公开语音", schema = @Schema(defaultValue = "true"))
-            @RequestParam(defaultValue = "true") Boolean includePublic) {
+            @RequestParam(defaultValue = "true") Boolean includePublic,
+            @Parameter(description = "排序方式：newest 或 likes", schema = @Schema(defaultValue = "newest"))
+            @RequestParam(defaultValue = "newest") String sort) {
         
-        log.debug("搜索语音: keyword={}, userId={}, includePublic={}", keyword, userId, includePublic);
+        log.debug("搜索语音: keyword={}, userId={}, includePublic={}, sort={}", keyword, userId, includePublic, sort);
         
-        return ttsVoiceService.searchVoices(keyword, userId, includePublic);
+        return ttsVoiceService.searchVoices(keyword, userId, includePublic, sort);
+    }
+
+    @Operation(
+        summary = "点赞语音",
+        description = "为指定语音点赞"
+    )
+    @PostMapping("/{voiceId}/like")
+    public Mono<ResponseEntity<TTSVoice>> likeVoice(
+            @Parameter(description = "语音ID", required = true)
+            @PathVariable String voiceId,
+            @Parameter(description = "用户ID", required = true)
+            @RequestParam String userId) {
+
+        log.info("点赞语音: voiceId={}, userId={}", voiceId, userId);
+
+        return ttsVoiceService.likeVoice(voiceId, userId)
+                .map(ResponseEntity::ok)
+                .onErrorResume(error -> {
+                    log.error("点赞语音失败: voiceId={}, userId={}", voiceId, userId, error);
+                    HttpStatus status = error instanceof SecurityException ? HttpStatus.FORBIDDEN : HttpStatus.BAD_REQUEST;
+                    return Mono.just(ResponseEntity.status(status).build());
+                });
+    }
+
+    @Operation(
+        summary = "取消点赞语音",
+        description = "取消对指定语音的点赞"
+    )
+    @DeleteMapping("/{voiceId}/like")
+    public Mono<ResponseEntity<TTSVoice>> unlikeVoice(
+            @Parameter(description = "语音ID", required = true)
+            @PathVariable String voiceId,
+            @Parameter(description = "用户ID", required = true)
+            @RequestParam String userId) {
+
+        log.info("取消点赞语音: voiceId={}, userId={}", voiceId, userId);
+
+        return ttsVoiceService.unlikeVoice(voiceId, userId)
+                .map(ResponseEntity::ok)
+                .onErrorResume(error -> {
+                    log.error("取消点赞语音失败: voiceId={}, userId={}", voiceId, userId, error);
+                    HttpStatus status = error instanceof SecurityException ? HttpStatus.FORBIDDEN : HttpStatus.BAD_REQUEST;
+                    return Mono.just(ResponseEntity.status(status).build());
+                });
     }
 
     @Operation(
@@ -214,7 +270,7 @@ public class TTSVoiceController {
         description = "根据可选的音色ID生成语音；未提供voiceId则使用默认音色"
     )
     @ApiResponses({
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+        @ApiResponse(
             responseCode = "200",
             description = "语音生成成功",
             content = @Content(
@@ -222,8 +278,8 @@ public class TTSVoiceController {
                 schema = @Schema(type = "string", format = "binary")
             )
         ),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "文本内容为空或参数错误"),
-        @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "500", description = "TTS服务异常或语音生成失败")
+        @ApiResponse(responseCode = "400", description = "文本内容为空或参数错误"),
+        @ApiResponse(responseCode = "500", description = "TTS服务异常或语音生成失败")
     })
     @PostMapping("/speak")
     public Mono<ResponseEntity<byte[]>> speak(

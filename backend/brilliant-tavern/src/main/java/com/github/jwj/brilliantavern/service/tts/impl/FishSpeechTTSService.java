@@ -6,6 +6,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
@@ -15,7 +18,6 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,28 +131,35 @@ public class FishSpeechTTSService implements TTSService {
      * 添加语音引用
      * 
      * @param referenceId 指定的引用ID
-     * @param audioBase64 音频文件的Base64编码
+     * @param audioBytes 音频文件
      * @param text 参考文本
      * @return 完成的引用ID
      */
-    public Mono<String> addVoiceReference(String referenceId, String audioBase64, String text) {
+    public Mono<String> addVoiceReference(String referenceId, byte[] audioBytes, String text) {
+        if (audioBytes == null || audioBytes.length == 0) {
+            return Mono.error(new IllegalArgumentException("音频内容为空"));
+        }
         log.info("添加指定ID的语音引用到FishSpeech服务: referenceId={}, text={}", referenceId, text);
-        
-        // 解码base64音频数据
-        byte[] audioBytes = Base64.getDecoder().decode(audioBase64);
+
         ByteArrayResource audioResource = new ByteArrayResource(audioBytes) {
             @Override
             public String getFilename() {
-                return "audio.wav"; // 提供文件名
+                return referenceId + ".wav";
             }
         };
-        
-        // 创建multipart表单数据，包含id字段
+
+        HttpHeaders fileHeaders = new HttpHeaders();
+        fileHeaders.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        fileHeaders.setContentDisposition(ContentDisposition.builder("form-data")
+                .name("audio")
+                .filename(audioResource.getFilename())
+                .build());
+
         MultiValueMap<String, Object> formData = new LinkedMultiValueMap<>();
-        formData.add("id", referenceId);  // id也作为表单字段
-        formData.add("audio", audioResource);
+        formData.add("id", referenceId);
+        formData.add("audio", new HttpEntity<>(audioResource, fileHeaders));
         formData.add("text", text);
-        
+
         return getFishSpeechWebClient()
                 .post()
                 .uri("/v1/references/add")
@@ -166,17 +175,6 @@ public class FishSpeechTTSService implements TTSService {
                 .thenReturn(referenceId)
                 .doOnSuccess(id -> log.info("成功添加指定ID的语音引用: {}", id))
                 .doOnError(error -> log.error("添加指定ID的语音引用失败: {}", referenceId, error));
-    }
-
-    /**
-     * 添加语音引用（字节数组版本）
-     */
-    public Mono<String> addVoiceReference(String referenceId, byte[] audioBytes, String text) {
-        if (audioBytes == null || audioBytes.length == 0) {
-            return Mono.error(new IllegalArgumentException("音频内容为空"));
-        }
-        String audioBase64 = Base64.getEncoder().encodeToString(audioBytes);
-        return addVoiceReference(referenceId, audioBase64, text);
     }
 
     /**

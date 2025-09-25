@@ -111,8 +111,9 @@
 
     <!-- 角色详情弹窗 -->
     <transition name="modal">
-      <div v-if="showDetailModal" class="modal-backdrop" @click="closeDetailModal">
-        <div class="character-detail-modal" @click.stop>
+      <div v-if="showDetailModal" class="character-detail-modal">
+        <div class="modal-backdrop" @click="closeDetailModal"></div>
+        <div class="modal-content-wrapper" @click.stop>
           <div class="modal-header">
             <h2>{{ editMode ? '编辑角色' : '角色详情' }}</h2>
             <div class="header-actions">
@@ -290,12 +291,11 @@
                 </div>
                 
                 <div class="form-group" v-if="editMode">
-                  <label>TTS音色ID</label>
-                  <input 
-                    v-model="editForm.ttsVoiceId" 
-                    class="form-input"
-                    placeholder="输入TTS音色ID（可选）"
-                    maxlength="100"
+                  <label>语音音色</label>
+                  <VoiceSelector
+                    v-model="editForm.ttsVoiceId"
+                    :voices="availableVoices"
+                    placeholder="选择语音音色（可选）"
                   />
                 </div>
               </div>
@@ -424,14 +424,16 @@
 
 <script>
 import { ref, reactive, computed, onMounted, nextTick, onUnmounted } from 'vue'
-import { characterCardAPI, uploadAPI } from '@/api'
+import { characterCardAPI, uploadAPI, ttsAPI } from '@/api'
 import { debounce, storage } from '@/utils'
 import CharacterCard from './CharacterCard.vue'
+import VoiceSelector from './VoiceSelector.vue'
 
 export default {
   name: 'CharacterMarket',
   components: {
-    CharacterCard
+    CharacterCard,
+    VoiceSelector
   },
   emits: ['create-new'],
   setup(props, { emit }) {
@@ -451,8 +453,7 @@ export default {
     const uploadingAvatar = ref(false) // 头像上传状态
     const avatarFileInput = ref(null) // 文件输入引用
     const uploadedAvatarMode = ref('') // 'uploaded' | 'url' | ''
-    
-    // 显示的头像URL - 编辑模式下的逻辑
+    const availableVoices = ref([]) // 音色列表    // 显示的头像URL - 编辑模式下的逻辑
     const displayedEditAvatarUrl = computed({
       get() {
         // 编辑模式下URL输入框始终为空，不显示原有URL（安全考虑）
@@ -522,6 +523,70 @@ export default {
     const debouncedSearch = debounce(() => {
       handleSearch()
     }, 500)
+
+    // 获取语音列表
+    const loadVoices = async () => {
+      try {
+        const user = storage.get('user')
+        if (!user || !user.userId) {
+          console.warn('用户未登录，无法获取语音列表')
+          availableVoices.value = []
+          return
+        }
+
+        // 并发获取用户音色和公开音色
+        const [userVoicesResponse, publicVoicesResponse] = await Promise.all([
+          ttsAPI.getUserVoices(user.userId).catch(() => ({ data: [] })),
+          ttsAPI.getPublicVoices().catch(() => ({ data: [] }))
+        ])
+
+        // 处理用户音色
+        let userVoices = []
+        if (Array.isArray(userVoicesResponse)) {
+          userVoices = userVoicesResponse
+        } else if (userVoicesResponse.data && Array.isArray(userVoicesResponse.data)) {
+          userVoices = userVoicesResponse.data
+        }
+
+        // 处理公开音色
+        let publicVoices = []
+        if (Array.isArray(publicVoicesResponse)) {
+          publicVoices = publicVoicesResponse
+        } else if (publicVoicesResponse.data && Array.isArray(publicVoicesResponse.data)) {
+          publicVoices = publicVoicesResponse.data
+        }
+
+        // 合并音色列表，去重（用户音色优先）
+        const allVoices = [...userVoices]
+        publicVoices.forEach(publicVoice => {
+          if (!allVoices.find(voice => voice.id === publicVoice.id)) {
+            allVoices.push(publicVoice)
+          }
+        })
+
+        // 转换为选项格式
+        availableVoices.value = allVoices.map(voice => ({
+          id: voice.id,
+          name: voice.description ? `${voice.name}（${voice.description}）` : voice.name
+        }))
+
+      } catch (error) {
+        console.error('获取语音列表失败:', error)
+        availableVoices.value = []
+      }
+    }
+
+    const filteredVoices = computed(() => {
+      const keyword = voiceSearch.value.trim().toLowerCase()
+      if (!keyword) {
+        return availableVoices.value
+      }
+      return availableVoices.value.filter(voice => {
+        const name = (voice.name || '').toString().toLowerCase()
+        const id = (voice.id || '').toString().toLowerCase()
+        return name.includes(keyword) || id.includes(keyword)
+      })
+    })
 
     // 获取角色卡数据
     const fetchCards = async (reset = false) => {
@@ -654,9 +719,6 @@ export default {
       showDetailModal.value = true
       // 初始化编辑表单数据，实现自动回显
       initEditForm(card)
-      // 添加背景模糊
-      document.body.style.backdropFilter = 'blur(8px)'
-      document.body.style.webkitBackdropFilter = 'blur(8px)'
     }
 
     // 关闭详情弹窗
@@ -664,9 +726,6 @@ export default {
       showDetailModal.value = false
       selectedCard.value = null
       editMode.value = false
-      // 移除背景模糊
-      document.body.style.backdropFilter = ''
-      document.body.style.webkitBackdropFilter = ''
     }
 
     // 初始化编辑表单数据
@@ -708,6 +767,8 @@ export default {
         // 进入编辑模式
         editMode.value = true
         initEditForm(selectedCard.value)
+        // 加载音色列表
+        await loadVoices()
       }
     }
 
@@ -978,6 +1039,9 @@ export default {
       addExampleDialog,
       removeExampleDialog,
       formatFullDate,
+      // 音色相关
+      availableVoices,
+      loadVoices,
       // 头像相关
       uploadingAvatar,
       avatarFileInput,
@@ -1398,22 +1462,30 @@ export default {
 }
 
 // 详情弹窗样式
-.modal-backdrop {
+.character-detail-modal {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  z-index: 1000;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 2rem;
 }
 
-.character-detail-modal {
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 1;
+}
+
+.modal-content-wrapper {
   background: var(--background-primary);
   border-radius: 16px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.15);
@@ -1423,6 +1495,8 @@ export default {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 10;
 }
 
 .modal-header {
@@ -1501,7 +1575,7 @@ export default {
       border-top-color: white;
       animation: spin 1s linear infinite;
       box-sizing: border-box; /* 确保border计算正确 */
-      margin-top: 20px; /* 使用margin向下调整位置 */
+      margin: 0; /* 保持与文本和图标居中对齐 */
     }
   }
 
@@ -1632,7 +1706,8 @@ export default {
   }
 
   .form-input,
-  .form-textarea {
+  .form-textarea,
+  .form-select {
     padding: 1rem;
     background: var(--background-secondary);
     color: var(--text-primary);
@@ -1652,6 +1727,16 @@ export default {
     &::placeholder {
       color: var(--text-tertiary);
     }
+  }
+
+  .form-select {
+    appearance: none;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1rem;
+    padding-right: 3rem;
   }
 
   .form-textarea {

@@ -78,11 +78,30 @@ public class TTSVoice {
     private OffsetDateTime updatedAt;
 
     /**
+     * 点赞数量
+     */
+    @Column(name = "likes_count", nullable = false)
+    @Builder.Default
+    private Integer likesCount = 0;
+
+    /**
      * 是否已删除（软删除）
      */
     @Column(name = "deleted")
     @Builder.Default
     private Boolean deleted = false;
+
+    /**
+     * 当前用户是否已点赞（仅返回时使用）
+     */
+    @Transient
+    private Boolean liked;
+
+    /**
+     * 创建者名称（仅返回时使用）
+     */
+    @Transient
+    private String creatorName;
 
     // 关联实体
     @ManyToOne(fetch = FetchType.LAZY)

@@ -45,7 +45,7 @@ public interface TTSVoiceService {
      * 
      * @return 公开语音列表
      */
-    Flux<TTSVoice> getPublicVoices();
+    Flux<TTSVoice> getPublicVoices(String userId, String sort);
     
     /**
      * 根据ID获取语音
@@ -78,6 +78,24 @@ public interface TTSVoiceService {
      * @param includePublic 是否包含公开语音
      * @return 匹配的语音列表
      */
-    Flux<TTSVoice> searchVoices(String keyword, String userId, Boolean includePublic);
+    Flux<TTSVoice> searchVoices(String keyword, String userId, Boolean includePublic, String sort);
+
+    /**
+     * 点赞音色
+     *
+     * @param voiceId 语音ID
+     * @param userId 用户ID
+     * @return 更新后的语音对象
+     */
+    Mono<TTSVoice> likeVoice(String voiceId, String userId);
+
+    /**
+     * 取消点赞音色
+     *
+     * @param voiceId 语音ID
+     * @param userId 用户ID
+     * @return 更新后的语音对象
+     */
+    Mono<TTSVoice> unlikeVoice(String voiceId, String userId);
 
 }

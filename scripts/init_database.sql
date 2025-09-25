@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS tts_voices (
     creator_id UUID NOT NULL,
     is_public BOOLEAN NOT NULL DEFAULT FALSE,
     reference_text TEXT,
+    likes_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -109,6 +110,22 @@ CREATE INDEX IF NOT EXISTS idx_tts_voices_is_public ON tts_voices(is_public);
 CREATE INDEX IF NOT EXISTS idx_tts_voices_deleted ON tts_voices(deleted);
 CREATE INDEX IF NOT EXISTS idx_tts_voices_created_at ON tts_voices(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tts_voices_name ON tts_voices USING gin(name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_tts_voices_likes_count ON tts_voices(likes_count DESC);
+
+-- =====================================
+-- 7. TTS语音点赞表 (tts_voice_likes)
+-- =====================================
+CREATE TABLE IF NOT EXISTS tts_voice_likes (
+    user_id UUID NOT NULL,
+    voice_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, voice_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (voice_id) REFERENCES tts_voices(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tts_voice_likes_voice_id ON tts_voice_likes(voice_id);
+CREATE INDEX IF NOT EXISTS idx_tts_voice_likes_created_at ON tts_voice_likes(created_at DESC);
 
 -- =====================================
 -- 6. 对话历史表 (chat_history)
@@ -177,4 +194,25 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_character_cards_likes_count 
     AFTER INSERT OR DELETE ON user_likes
     FOR EACH ROW EXECUTE FUNCTION update_likes_count();
+
+-- =====================================
+-- 触发器函数：自动更新TTS语音点赞数
+-- =====================================
+CREATE OR REPLACE FUNCTION update_voice_likes_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE tts_voices SET likes_count = likes_count + 1 WHERE id = NEW.voice_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE tts_voices SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = OLD.voice_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_tts_voice_likes_count
+    AFTER INSERT OR DELETE ON tts_voice_likes
+    FOR EACH ROW EXECUTE FUNCTION update_voice_likes_count();
 

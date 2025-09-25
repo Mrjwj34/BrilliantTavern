@@ -38,4 +38,10 @@ public class TTSResponse {
      * 使用的音色ID
      */
     private String voiceId;
+    
+    /**
+     * 是否来自缓存
+     */
+    @Builder.Default
+    private Boolean fromCache = false;
 }

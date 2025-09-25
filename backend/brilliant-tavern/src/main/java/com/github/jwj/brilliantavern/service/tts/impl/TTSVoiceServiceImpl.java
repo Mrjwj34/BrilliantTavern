@@ -1,7 +1,13 @@
 package com.github.jwj.brilliantavern.service.tts.impl;
 
 import com.github.jwj.brilliantavern.entity.TTSVoice;
+import com.github.jwj.brilliantavern.entity.TTSVoiceLike;
+import com.github.jwj.brilliantavern.entity.TTSVoiceLikeId;
+import com.github.jwj.brilliantavern.entity.User;
 import com.github.jwj.brilliantavern.repository.TTSVoiceRepository;
+import com.github.jwj.brilliantavern.repository.TTSVoiceLikeRepository;
+import com.github.jwj.brilliantavern.repository.UserRepository;
+import com.github.jwj.brilliantavern.service.TTSCacheService;
 import com.github.jwj.brilliantavern.service.tts.TTSVoiceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +18,15 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * TTS语音管理服务实现
@@ -23,7 +37,10 @@ import java.util.UUID;
 public class TTSVoiceServiceImpl implements TTSVoiceService {
     
     private final TTSVoiceRepository ttsVoiceRepository;
+    private final TTSVoiceLikeRepository ttsVoiceLikeRepository;
+    private final UserRepository userRepository;
     private final FishSpeechTTSService fishSpeechService;
+    private final TTSCacheService ttsCacheService;
     
     @Override
     @Transactional
@@ -40,28 +57,32 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
         log.info("生成引用ID: {}", referenceId);
         
         // 向FishSpeech服务添加音色（使用生成的UUID）
-        return fishSpeechService.addVoiceReference(referenceId, audioBytes, referenceText)
-                .flatMap(returnedReferenceId -> Mono.fromCallable(() -> {
+    UUID creatorUuid = UUID.fromString(userId);
+
+    return fishSpeechService.addVoiceReference(referenceId, audioBytes, referenceText)
+        .flatMap(returnedReferenceId -> Mono.fromCallable(() -> {
                     log.info("FishSpeech服务确认引用ID: {}", returnedReferenceId);
                     // 创建TTSVoice实体
                     TTSVoice voice = new TTSVoice();
+                    // ID 由数据库自动生成，不需要设置
                     voice.setName(name);
                     voice.setDescription(description);
                     voice.setReferenceId(referenceId);
-                    voice.setCreatorId(UUID.fromString(userId));
+            voice.setCreatorId(creatorUuid);
                     voice.setIsPublic(isPublic != null ? isPublic : false);
                     voice.setCreatedAt(OffsetDateTime.now());
                     voice.setUpdatedAt(OffsetDateTime.now());
                     voice.setDeleted(false);
                     voice.setReferenceText(referenceText);
+            voice.setLikesCount(0);
                     
                     // 保存到数据库
                     return ttsVoiceRepository.save(voice);
-                }).subscribeOn(Schedulers.boundedElastic()))
+        }).subscribeOn(Schedulers.boundedElastic()))
+        .map(savedVoice -> enrichVoice(savedVoice, creatorUuid))
                 .doOnSuccess(voice -> log.info("成功创建语音引用: id={}, referenceId={}", 
                         voice.getId(), voice.getReferenceId()))
-                .doOnError(error -> log.error("创建语音引用失败: userId={}, name={}", 
-                        userId, name, error));
+                .doOnError(error -> log.error("创建语音引用失败: userId={}, name= {}", userId, name, error));
     }
     
     @Override
@@ -69,9 +90,9 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
     public Mono<Void> deleteVoice(String voiceId, String userId) {
         log.info("删除语音引用: voiceId={}, userId={}", voiceId, userId);
         
-        return Mono.fromCallable(() -> ttsVoiceRepository.findByIdAndNotDeleted(Long.parseLong(voiceId)))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(voiceOpt -> {
+    return Mono.fromCallable(() -> ttsVoiceRepository.findByIdAndNotDeleted(Long.parseLong(voiceId)))
+        .subscribeOn(Schedulers.boundedElastic())
+        .flatMap(voiceOpt -> {
                     if (voiceOpt.isEmpty()) {
                         return Mono.error(new IllegalArgumentException("语音不存在"));
                     }
@@ -84,17 +105,18 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
                         return Mono.error(new SecurityException("没有权限删除此语音"));
                     }
                     
-                    // 从FishSpeech服务删除引用
-                    return fishSpeechService.deleteVoiceReference(voice.getReferenceId())
-                            .then(Mono.fromRunnable(() -> {
-                                // 软删除
+                    // 软删除并清理缓存
+                    return Mono.fromRunnable(() -> {
                                 voice.setDeleted(true);
                                 voice.setUpdatedAt(OffsetDateTime.now());
                                 ttsVoiceRepository.save(voice);
-                            }).subscribeOn(Schedulers.boundedElastic()).then());
+                                ttsCacheService.clearVoiceTestCache(voice.getReferenceId());
+                            })
+                            .subscribeOn(Schedulers.boundedElastic());
                 })
                 .doOnSuccess(v -> log.info("成功删除语音引用: voiceId={}", voiceId))
-                .doOnError(error -> log.error("删除语音引用失败: voiceId={}", voiceId, error));
+                .doOnError(error -> log.error("删除语音引用失败: voiceId={}", voiceId, error))
+                .then();
     }
     
     @Override
@@ -103,19 +125,27 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
         
         return Mono.fromCallable(() -> {
             UUID userUuid = UUID.fromString(userId);
-            // 查找用户创建的语音和点赞的语音
-            return ttsVoiceRepository.findByCreatorIdAndNotDeleted(userUuid);
+            List<TTSVoice> voices = ttsVoiceRepository.findByCreatorIdAndNotDeleted(userUuid);
+            sortVoices(voices, "newest");
+            enrichVoices(voices, userUuid);
+            return voices;
         }).subscribeOn(Schedulers.boundedElastic())
         .flatMapMany(Flux::fromIterable);
     }
     
     @Override
-    public Flux<TTSVoice> getPublicVoices() {
-        log.debug("获取公开语音列表");
-        
-        return Mono.fromCallable(ttsVoiceRepository::findPublicVoices)
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMapMany(Flux::fromIterable);
+    public Flux<TTSVoice> getPublicVoices(String userId, String sort) {
+        log.debug("获取公开语音列表, userId={}, sort={}", userId, sort);
+
+        UUID currentUserId = parseUserId(userId);
+
+        return Mono.fromCallable(() -> {
+            List<TTSVoice> voices = ttsVoiceRepository.findPublicVoices();
+            sortVoices(voices, sort);
+            enrichVoices(voices, currentUserId);
+            return voices;
+        }).subscribeOn(Schedulers.boundedElastic())
+        .flatMapMany(Flux::fromIterable);
     }
     
     @Override
@@ -137,6 +167,7 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
                         return Mono.error(new SecurityException("没有权限访问此语音"));
                     }
                     
+                    enrichVoices(Collections.singletonList(voice), userUuid);
                     return Mono.just(voice);
                 });
     }
@@ -174,8 +205,9 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
                     }
                     voice.setUpdatedAt(OffsetDateTime.now());
                     
-                    return Mono.fromCallable(() -> ttsVoiceRepository.save(voice))
-                            .subscribeOn(Schedulers.boundedElastic());
+            return Mono.fromCallable(() -> ttsVoiceRepository.save(voice))
+                .subscribeOn(Schedulers.boundedElastic())
+                .map(savedVoice -> enrichVoice(savedVoice, userUuid));
                 })
                 .doOnSuccess(voice -> log.info("成功更新语音信息: voiceId={}", voiceId))
                 .doOnError(error -> log.error("更新语音信息失败: voiceId={}", voiceId, error));
@@ -183,18 +215,139 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
 
     
     @Override
-    public Flux<TTSVoice> searchVoices(String keyword, String userId, Boolean includePublic) {
-        log.debug("搜索语音: keyword={}, userId={}, includePublic={}", keyword, userId, includePublic);
-        
+    public Flux<TTSVoice> searchVoices(String keyword, String userId, Boolean includePublic, String sort) {
+        log.debug("搜索语音: keyword={}, userId={}, includePublic={}, sort={}", keyword, userId, includePublic, sort);
+
         return Mono.fromCallable(() -> {
             UUID userUuid = UUID.fromString(userId);
+            List<TTSVoice> voices;
             if (includePublic != null && includePublic) {
-                return ttsVoiceRepository.searchAccessibleVoices(keyword, userUuid);
+                voices = ttsVoiceRepository.searchAccessibleVoices(keyword, userUuid);
             } else {
-                return ttsVoiceRepository.searchUserVoices(keyword, userUuid);
+                voices = ttsVoiceRepository.searchUserVoices(keyword, userUuid);
             }
+            sortVoices(voices, sort);
+            enrichVoices(voices, userUuid);
+            return voices;
         }).subscribeOn(Schedulers.boundedElastic())
         .flatMapMany(Flux::fromIterable);
+    }
+
+    @Override
+    @Transactional
+    public Mono<TTSVoice> likeVoice(String voiceId, String userId) {
+        log.info("点赞语音: voiceId={}, userId={}", voiceId, userId);
+
+        return Mono.fromCallable(() -> {
+            Long voiceLongId = Long.parseLong(voiceId);
+            UUID userUuid = UUID.fromString(userId);
+
+            TTSVoice voice = ttsVoiceRepository.findByIdAndNotDeleted(voiceLongId)
+                    .orElseThrow(() -> new IllegalArgumentException("语音不存在"));
+
+            if (!Boolean.TRUE.equals(voice.getIsPublic()) && !voice.getCreatorId().equals(userUuid)) {
+                throw new SecurityException("没有权限点赞此语音");
+            }
+
+            if (!ttsVoiceLikeRepository.existsByIdUserIdAndIdVoiceId(userUuid, voiceLongId)) {
+                TTSVoiceLike like = TTSVoiceLike.builder()
+                        .id(new TTSVoiceLikeId(userUuid, voiceLongId))
+                        .build();
+                ttsVoiceLikeRepository.save(like);
+            }
+
+            TTSVoice refreshed = ttsVoiceRepository.findByIdAndNotDeleted(voiceLongId)
+                    .orElseThrow(() -> new IllegalArgumentException("语音不存在"));
+            return enrichVoice(refreshed, userUuid);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    @Transactional
+    public Mono<TTSVoice> unlikeVoice(String voiceId, String userId) {
+        log.info("取消点赞语音: voiceId={}, userId={}", voiceId, userId);
+
+        return Mono.fromCallable(() -> {
+            Long voiceLongId = Long.parseLong(voiceId);
+            UUID userUuid = UUID.fromString(userId);
+
+            TTSVoice voice = ttsVoiceRepository.findByIdAndNotDeleted(voiceLongId)
+                    .orElseThrow(() -> new IllegalArgumentException("语音不存在"));
+
+            if (!Boolean.TRUE.equals(voice.getIsPublic()) && !voice.getCreatorId().equals(userUuid)) {
+                throw new SecurityException("没有权限操作此语音");
+            }
+
+            if (ttsVoiceLikeRepository.existsByIdUserIdAndIdVoiceId(userUuid, voiceLongId)) {
+                ttsVoiceLikeRepository.deleteById(new TTSVoiceLikeId(userUuid, voiceLongId));
+            }
+
+            TTSVoice refreshed = ttsVoiceRepository.findByIdAndNotDeleted(voiceLongId)
+                    .orElseThrow(() -> new IllegalArgumentException("语音不存在"));
+            return enrichVoice(refreshed, userUuid);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private UUID parseUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        return UUID.fromString(userId);
+    }
+
+    private void enrichVoices(List<TTSVoice> voices, UUID currentUserId) {
+        if (voices == null || voices.isEmpty()) {
+            return;
+        }
+
+        Set<UUID> creatorIds = voices.stream()
+                .map(TTSVoice::getCreatorId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<UUID, String> creatorNameMap = creatorIds.isEmpty()
+                ? Collections.emptyMap()
+                : userRepository.findAllById(creatorIds).stream()
+                    .collect(Collectors.toMap(User::getId, User::getUsername));
+
+        Set<Long> likedVoiceIds = Collections.emptySet();
+        List<Long> voiceIds = voices.stream()
+                .map(TTSVoice::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (currentUserId != null && !voiceIds.isEmpty()) {
+            likedVoiceIds = new HashSet<>(ttsVoiceLikeRepository.findLikedVoiceIds(currentUserId, voiceIds));
+        }
+
+        for (TTSVoice voice : voices) {
+            if (voice.getLikesCount() == null) {
+                voice.setLikesCount(0);
+            }
+            voice.setCreatorName(creatorNameMap.getOrDefault(voice.getCreatorId(), "匿名用户"));
+            voice.setLiked(currentUserId != null && likedVoiceIds.contains(voice.getId()));
+        }
+    }
+
+    private TTSVoice enrichVoice(TTSVoice voice, UUID currentUserId) {
+        enrichVoices(Collections.singletonList(voice), currentUserId);
+        return voice;
+    }
+
+    private void sortVoices(List<TTSVoice> voices, String sort) {
+        if (voices == null || voices.isEmpty()) {
+            return;
+        }
+
+        if ("likes".equalsIgnoreCase(sort)) {
+            voices.sort(
+                Comparator
+                    .comparingInt((TTSVoice v) -> v.getLikesCount() == null ? 0 : v.getLikesCount())
+                    .reversed()
+                    .thenComparing(TTSVoice::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            );
+        } else {
+            voices.sort(Comparator.comparing(TTSVoice::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())));
+        }
     }
 
 }

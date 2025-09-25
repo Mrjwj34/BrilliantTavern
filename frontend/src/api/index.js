@@ -137,8 +137,8 @@ export const ttsAPI = {
   },
 
   // 获取公开音色列表
-  getPublicVoices() {
-    return request.get('/tts/reference/public')
+  getPublicVoices(params = {}) {
+    return request.get('/tts/reference/public', { params })
   },
 
   // 获取音色详情
@@ -159,13 +159,26 @@ export const ttsAPI = {
   },
 
   // 搜索音色
-  searchVoices(keyword, userId, includePublic = true) {
+  searchVoices(keyword, userId, includePublic = true, sort = 'newest') {
     return request.get('/tts/reference/search', {
       params: {
         keyword,
         userId,
-        includePublic
+        includePublic,
+        sort
       }
+    })
+  },
+
+  likeVoice(voiceId, userId) {
+    return request.post(`/tts/reference/${voiceId}/like`, null, {
+      params: { userId }
+    })
+  },
+
+  unlikeVoice(voiceId, userId) {
+    return request.delete(`/tts/reference/${voiceId}/like`, {
+      params: { userId }
     })
   },
 
