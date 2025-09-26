@@ -14,7 +14,9 @@
     "vue-router": "^4.2.0",
     "axios": "^1.5.0",
     "element-plus": "^2.4.0",
-    "@element-plus/icons-vue": "^2.1.0"
+    "@element-plus/icons-vue": "^2.1.0",
+    "@stomp/stompjs": "^7.0.0",
+    "sockjs-client": "^1.6.1"
   },
   "devDependencies": {
     "@vue/cli-plugin-router": "~5.0.0",

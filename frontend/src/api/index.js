@@ -108,6 +108,30 @@ export const voiceAPI = {
   }
 }
 
+// 语音聊天相关API
+export const voiceChatAPI = {
+  createSession(data) {
+    return request.post('/voice-chat/sessions', data)
+  },
+
+  fetchHistory(characterCardId, limit = 20) {
+    return request.get('/voice-chat/history', {
+      params: {
+        characterCardId,
+        limit
+      }
+    })
+  },
+
+  closeSession(sessionId) {
+    return request.post(`/voice-chat/sessions/${sessionId}/close`)
+  },
+
+  checkSessionStatus(sessionId) {
+    return request.get(`/voice-chat/sessions/${sessionId}/status`)
+  }
+}
+
 // TTS语音相关API
 export const ttsAPI = {
   // 创建音色

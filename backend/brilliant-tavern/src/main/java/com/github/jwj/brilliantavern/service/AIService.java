@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -44,54 +45,44 @@ public class AIService {
     private static final Pattern ASR_PATTERN = Pattern.compile("\\[ASR_TRANSCRIPTION](.*?)\\[/ASR_TRANSCRIPTION]");
 
     /**
-     * 处理语音消息并返回AI回复流
-     * 
-     * @param voiceMessage 语音消息
-     * @param characterCard 角色卡信息
-     * @param conversationId 对话ID
-     * @return AI回复流
+     * 处理语音消息并返回包含分段的AI流式事件。
      */
-    public Flux<String> processVoiceMessage(VoiceMessage voiceMessage, 
-                                          CharacterCard characterCard,
-                                          String conversationId) {
-        try {
-            // 构建系统提示词
-            String systemPrompt = buildSystemPrompt(characterCard);
-            
-            // 获取历史对话消息
-            List<org.springframework.ai.chat.messages.Message> historyMessages = chatMemory.get(conversationId);
-            
-            // 创建音频媒体资源
-            ByteArrayResource audioResource = new ByteArrayResource(voiceMessage.getAudioData());
-            MimeType audioMimeType = getAudioMimeType(voiceMessage.getAudioFormat());
-            
-            StringBuilder fullResponse = new StringBuilder();
-            
-            // 使用ChatClient构建多模态消息
-            ChatClient chatClient = ChatClient.create(chatModel);
-            
-            return chatClient.prompt()
-                    .system(systemPrompt)
-                    .messages(historyMessages) // 添加历史对话
-                    .user(userSpec -> userSpec
-                            .media(audioMimeType, audioResource))
-                    .stream()
-                    .content()
-                    .doOnNext(content -> {
-                        fullResponse.append(content);
-                        log.debug("AI回复片段: {}", content);
-                    })
-                    .doOnComplete(() -> {
-                        // 处理完整回复，提取ASR转写并更新对话历史
-                        String completeResponse = fullResponse.toString();
-                        processCompleteResponse(completeResponse, conversationId, "音频消息");
-                    })
-                    .doOnError(error -> log.error("AI处理语音消息失败", error));
-                
-        } catch (Exception e) {
-            log.error("处理语音消息失败", e);
-            return Flux.error(e);
-        }
+    public Flux<AIStreamEvent> streamVoiceConversation(VoiceMessage voiceMessage,
+                                                       CharacterCard characterCard,
+                                                       String conversationId,
+                                                       String messageId) {
+        return Flux.defer(() -> {
+            try {
+                String systemPrompt = buildSystemPrompt(characterCard);
+                List<org.springframework.ai.chat.messages.Message> historyMessages = chatMemory.get(conversationId);
+
+                ByteArrayResource audioResource = new ByteArrayResource(voiceMessage.getAudioData());
+                MimeType audioMimeType = getAudioMimeType(voiceMessage.getAudioFormat());
+
+                StringBuilder fullResponse = new StringBuilder();
+                ChatClient chatClient = ChatClient.create(chatModel);
+
+                return chatClient.prompt()
+                        .system(systemPrompt)
+                        .messages(historyMessages)
+                        .user(userSpec -> userSpec.media(audioMimeType, audioResource))
+                        .stream()
+                        .content()
+                        .doOnNext(content -> {
+                            fullResponse.append(content);
+                            log.debug("AI回复片段: {}", content);
+                        })
+                        .map(content -> AIStreamEvent.chunk(messageId, content))
+                        .concatWith(Mono.fromCallable(() -> {
+                            ProcessedAiResponse processed = processCompleteResponse(fullResponse.toString(), conversationId, "音频消息");
+                            return AIStreamEvent.completed(messageId, processed);
+                        }))
+                        .doOnError(error -> log.error("AI处理语音消息失败", error));
+            } catch (Exception e) {
+                log.error("处理语音消息失败", e);
+                return Flux.<AIStreamEvent>error(e);
+            }
+        });
     }
     
     /**
@@ -168,7 +159,9 @@ public class AIService {
     /**
      * 处理完整回复，提取ASR转写并更新对话历史
      */
-    private void processCompleteResponse(String completeResponse, String conversationId, String userTranscriptionFallback) {
+    private ProcessedAiResponse processCompleteResponse(String completeResponse,
+                                                        String conversationId,
+                                                        String userTranscriptionFallback) {
         try {
             // 提取ASR转写内容
             Matcher matcher = ASR_PATTERN.matcher(completeResponse);
@@ -193,9 +186,34 @@ public class AIService {
             chatMemory.add(conversationId, new AssistantMessage(aiResponse));
             
             log.debug("更新对话历史成功，对话ID: {}", conversationId);
-            
+            return new ProcessedAiResponse(aiResponse, userTranscription);
+
         } catch (Exception e) {
             log.error("处理完整回复失败", e);
+            return new ProcessedAiResponse(completeResponse, userTranscriptionFallback);
         }
     }
+
+    /**
+     * AI流式事件。
+     */
+    @lombok.Value
+    public static class AIStreamEvent {
+        public enum Type { CHUNK, COMPLETED }
+
+        Type type;
+        String messageId;
+        String content;
+        ProcessedAiResponse processedResponse;
+
+        public static AIStreamEvent chunk(String messageId, String content) {
+            return new AIStreamEvent(Type.CHUNK, messageId, content, null);
+        }
+
+        public static AIStreamEvent completed(String messageId, ProcessedAiResponse response) {
+            return new AIStreamEvent(Type.COMPLETED, messageId, null, response);
+        }
+    }
+
+    public record ProcessedAiResponse(String aiResponse, String userTranscription) {}
 }

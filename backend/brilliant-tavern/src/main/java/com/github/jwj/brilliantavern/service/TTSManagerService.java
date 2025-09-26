@@ -3,9 +3,11 @@ package com.github.jwj.brilliantavern.service;
 import com.github.jwj.brilliantavern.service.tts.TTSConfig;
 import com.github.jwj.brilliantavern.service.tts.TTSResponse;
 import com.github.jwj.brilliantavern.service.tts.TTSService;
+import com.github.jwj.brilliantavern.service.tts.TtsChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -84,6 +86,41 @@ public class TTSManagerService {
                             .errorMessage(error.getMessage())
                             .voiceId(voiceId)
                             .build());
+                });
+    }
+
+    /**
+     * 以流式方式生成语音片段，保持顺序。
+     */
+    public Flux<TtsChunk> streamSpeechWithVoice(String text, String voiceId) {
+        if (text == null || text.trim().isEmpty()) {
+            return Flux.empty();
+        }
+
+        boolean cacheable = ttsCacheService.isTestText(text);
+        if (cacheable) {
+            byte[] cachedAudio = ttsCacheService.getCachedTestAudio(text, voiceId);
+            if (cachedAudio != null && cachedAudio.length > 0) {
+                return Flux.just(TtsChunk.of(0, cachedAudio, true, TTSConfig.AudioFormat.MP3.name().toLowerCase()));
+            }
+        }
+
+        java.io.ByteArrayOutputStream cacheBuffer = cacheable ? new java.io.ByteArrayOutputStream() : null;
+
+        return ttsService.streamTextToSpeech(text, voiceId)
+                .doOnNext(chunk -> {
+                    if (cacheBuffer != null && chunk.getAudioData() != null && chunk.getAudioData().length > 0) {
+                        try {
+                            cacheBuffer.write(chunk.getAudioData());
+                        } catch (java.io.IOException e) {
+                            log.warn("写入缓存音频失败: {}", e.getMessage());
+                        }
+                    }
+                })
+                .doOnComplete(() -> {
+                    if (cacheBuffer != null && cacheBuffer.size() > 0) {
+                        ttsCacheService.putCachedTestAudio(text, voiceId, cacheBuffer.toByteArray());
+                    }
                 });
     }
 

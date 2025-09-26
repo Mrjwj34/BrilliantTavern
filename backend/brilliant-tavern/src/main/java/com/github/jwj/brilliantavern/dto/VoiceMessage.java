@@ -35,4 +35,14 @@ public class VoiceMessage {
      * 发送时间戳
      */
     private Long timestamp;
+
+    /**
+     * 音频采样率
+     */
+    private Integer sampleRate;
+
+    /**
+     * 音频持续时长（毫秒）
+     */
+    private Long durationMillis;
 }

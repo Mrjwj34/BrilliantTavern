@@ -63,7 +63,9 @@ public class VoiceChatService {
                 .greetingMessage(characterCard.getGreetingMessage())
                 .ttsVoiceId(characterCard.getTtsVoiceId())
                 .createdAt(OffsetDateTime.now())
-                .websocketEndpoint("/ws/voice-stream/" + sessionId)
+        .websocketEndpoint("/ws/voice-chat")
+        .subscriptionDestination("/topic/voice/" + sessionId)
+        .publishDestination("/app/voice/" + sessionId)
                 .build();
         
         // 将会话信息存储到Redis
