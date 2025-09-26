@@ -94,7 +94,7 @@
           :is-selected="selectedVoice?.id === voice.id"
           @click="selectVoice"
           @edit="openEditModal"
-          @delete="deleteVoice"
+          @delete="openDeleteConfirm"
         />
       </div>
     </div>
@@ -164,6 +164,44 @@
         </div>
       </div>
     </transition>
+
+    <transition name="fade">
+      <div v-if="deleteConfirm.visible" class="confirm-modal">
+        <div class="modal-backdrop" @click="!deleteConfirm.loading && closeDeleteConfirm()"></div>
+        <div class="modal-dialog compact" @click.stop>
+          <div class="modal-header">
+            <h4>删除音色</h4>
+            <button class="close-btn" type="button" @click="closeDeleteConfirm" :disabled="deleteConfirm.loading">
+              <span>&times;</span>
+            </button>
+          </div>
+          <div class="modal-content">
+            <p class="confirm-message">
+              确认删除音色
+              <strong>{{ deleteConfirm.voice?.name }}</strong>
+              吗？该操作无法恢复。
+            </p>
+          </div>
+          <div class="modal-actions">
+            <button
+              type="button"
+              class="btn secondary"
+              @click="closeDeleteConfirm"
+              :disabled="deleteConfirm.loading"
+            >取消</button>
+            <button
+              type="button"
+              class="btn danger"
+              @click="confirmDeleteVoice"
+              :disabled="deleteConfirm.loading"
+            >
+              <span v-if="deleteConfirm.loading" class="loading-indicator"></span>
+              确认删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -194,6 +232,33 @@ export default {
       isPublic: false
     })
     const editingVoiceOriginal = ref(null)
+    const deleteConfirm = reactive({
+      visible: false,
+      voice: null,
+      loading: false
+    })
+
+    const computeOwned = (voice, currentUserId) => {
+      if (!voice) return false
+      if (typeof voice.owned === 'boolean') return voice.owned
+      if (typeof voice.isOwner === 'boolean') return voice.isOwner
+      const creatorId = voice.creatorId || voice.creator_id
+      if (!creatorId || !currentUserId) return false
+      return String(creatorId).toLowerCase() === String(currentUserId).toLowerCase()
+    }
+
+    const withOwnership = (voice, currentUserId) => {
+      if (!voice) return voice
+      return {
+        ...voice,
+        owned: computeOwned(voice, currentUserId)
+      }
+    }
+
+    const normalizeVoiceList = (list, currentUserId) => {
+      if (!Array.isArray(list)) return []
+      return list.map(item => withOwnership(item, currentUserId))
+    }
 
     const fetchVoices = async () => {
       loading.value = true
@@ -207,16 +272,18 @@ export default {
         const response = await ttsAPI.getUserVoices(user.userId)
         console.log('获取用户音色列表响应:', response)
 
+        let voiceList = []
         if (Array.isArray(response)) {
-          voices.value = response
+          voiceList = response
         } else if (response?.data && Array.isArray(response.data)) {
-          voices.value = response.data
+          voiceList = response.data
         } else if (response?.code === 200 && Array.isArray(response.data)) {
-          voices.value = response.data
+          voiceList = response.data
         } else {
           console.warn('未知的用户音色响应格式:', response)
-          voices.value = []
         }
+
+        voices.value = normalizeVoiceList(voiceList, user.userId)
       } catch (error) {
         console.error('获取音色列表失败:', error)
         voices.value = []
@@ -235,6 +302,12 @@ export default {
     }
 
     const openEditModal = (voice) => {
+      const user = storage.get('user')
+      const owned = computeOwned(voice, user?.userId)
+      if (!owned) {
+        notification.warning('无法编辑他人创建的音色')
+        return
+      }
       editingVoiceOriginal.value = { ...voice }
       editForm.id = voice.id
       editForm.name = voice.name || ''
@@ -306,18 +379,20 @@ export default {
           return
         }
 
+        const normalizedVoice = withOwnership(updatedVoice, user.userId)
+
         const idx = voices.value.findIndex(v => v.id === updatedVoice.id)
         if (idx > -1) {
           voices.value[idx] = {
             ...voices.value[idx],
-            ...updatedVoice
+            ...normalizedVoice
           }
         }
 
         if (selectedVoice.value?.id === updatedVoice.id) {
           selectedVoice.value = {
             ...selectedVoice.value,
-            ...updatedVoice
+            ...normalizedVoice
           }
           emit('select-voice', selectedVoice.value)
         }
@@ -332,26 +407,53 @@ export default {
       }
     }
 
-    const deleteVoice = async (voice) => {
-      if (!confirm(`确定要删除音色"${voice.name}"吗？此操作无法撤销。`)) {
+    const openDeleteConfirm = (voice) => {
+      const user = storage.get('user')
+      const owned = computeOwned(voice, user?.userId)
+      if (!owned) {
+        notification.warning('无法删除他人创建的音色')
+        return
+      }
+      deleteConfirm.voice = voice
+      deleteConfirm.visible = true
+      deleteConfirm.loading = false
+    }
+
+    const closeDeleteConfirm = () => {
+      if (deleteConfirm.loading) return
+      deleteConfirm.visible = false
+      deleteConfirm.voice = null
+    }
+
+    const confirmDeleteVoice = async () => {
+      if (deleteConfirm.loading || !deleteConfirm.voice) {
+        return
+      }
+
+      const user = storage.get('user')
+      if (!user) {
+        notification.error('请先登录')
+        closeDeleteConfirm()
+        return
+      }
+
+      const owned = computeOwned(deleteConfirm.voice, user.userId)
+      if (!owned) {
+        notification.warning('无法删除他人创建的音色')
+        closeDeleteConfirm()
         return
       }
 
       try {
-        const user = storage.get('user')
-        if (!user) {
-          notification.error('请先登录')
-          return
-        }
+        deleteConfirm.loading = true
+        await ttsAPI.deleteVoice(deleteConfirm.voice.id, user.userId)
 
-        await ttsAPI.deleteVoice(voice.id, user.userId)
-
-        const index = voices.value.findIndex(v => v.id === voice.id)
+        const index = voices.value.findIndex(v => v.id === deleteConfirm.voice.id)
         if (index > -1) {
           voices.value.splice(index, 1)
         }
 
-        if (selectedVoice.value?.id === voice.id) {
+        if (selectedVoice.value?.id === deleteConfirm.voice.id) {
           selectedVoice.value = null
         }
 
@@ -359,6 +461,9 @@ export default {
       } catch (error) {
         console.error('删除音色失败:', error)
         notification.error('删除失败: ' + (error.message || '未知错误'))
+      } finally {
+        deleteConfirm.loading = false
+        closeDeleteConfirm()
       }
     }
 
@@ -402,8 +507,12 @@ export default {
       openEditModal,
       closeEditModal,
       submitEdit,
-      deleteVoice,
-      formatDate
+      openDeleteConfirm,
+      closeDeleteConfirm,
+      confirmDeleteVoice,
+      formatDate,
+      deleteConfirm,
+      computeOwned
     }
   }
 }
@@ -743,7 +852,8 @@ export default {
   animation: spin 1s linear infinite;
 }
 
-.voice-edit-modal {
+.voice-edit-modal,
+.confirm-modal {
   position: fixed;
   inset: 0;
   display: flex;
@@ -764,18 +874,23 @@ export default {
   background: var(--background-primary);
   border-radius: $border-radius-lg;
   box-shadow: var(--shadow-large);
-  padding: $spacing-lg;
+  padding: $spacing-sm $spacing $spacing;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: $spacing;
+  gap: $spacing-sm;
+}
+
+.modal-dialog.compact {
+  width: min(420px, 85vw);
+  padding: $spacing-xs $spacing $spacing;
 }
 
 .modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: $spacing-sm;
+  margin-bottom: $spacing-xs;
 
   h4 {
     margin: 0;
@@ -806,6 +921,25 @@ export default {
   display: flex;
   flex-direction: column;
   gap: $spacing;
+}
+
+.modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.confirm-message {
+  margin: 0;
+  line-height: 1.6;
+
+  strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
 }
 
 .form-group {
@@ -859,7 +993,21 @@ export default {
   display: flex;
   justify-content: flex-end;
   gap: $spacing-sm;
-  margin-top: $spacing;
+  margin-top: $spacing-sm;
+}
+
+.btn.danger {
+  background: var(--error-color);
+  color: #fff;
+
+  &:hover:not(:disabled) {
+    filter: brightness(0.95);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
 }
 
 .btn {

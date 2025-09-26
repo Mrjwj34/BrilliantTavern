@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -69,6 +70,12 @@ public interface TTSVoiceRepository extends JpaRepository<TTSVoice, Long> {
      */
     @Query("SELECT v FROM TTSVoice v WHERE v.id = :id AND v.deleted = false")
     Optional<TTSVoice> findByIdAndNotDeleted(@Param("id") Long id);
+
+    /**
+     * 根据ID集合查找未删除的音色
+     */
+    @Query("SELECT v FROM TTSVoice v WHERE v.deleted = false AND v.id IN :ids")
+    List<TTSVoice> findAllByIdInAndNotDeleted(@Param("ids") Collection<Long> ids);
 
     /**
      * 搜索用户可访问的音色

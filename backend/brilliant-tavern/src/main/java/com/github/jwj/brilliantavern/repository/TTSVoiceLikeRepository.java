@@ -23,4 +23,7 @@ public interface TTSVoiceLikeRepository extends JpaRepository<TTSVoiceLike, TTSV
 
     @Query("select l.id.voiceId from TTSVoiceLike l where l.id.userId = :userId and l.id.voiceId in :voiceIds")
     List<Long> findLikedVoiceIds(@Param("userId") UUID userId, @Param("voiceIds") Collection<Long> voiceIds);
+
+    @Query("select l.id.voiceId from TTSVoiceLike l where l.id.userId = :userId")
+    List<Long> findLikedVoiceIdsByUserId(@Param("userId") UUID userId);
 }

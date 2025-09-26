@@ -18,9 +18,11 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -125,10 +127,24 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
         
         return Mono.fromCallable(() -> {
             UUID userUuid = UUID.fromString(userId);
-            List<TTSVoice> voices = ttsVoiceRepository.findByCreatorIdAndNotDeleted(userUuid);
-            sortVoices(voices, "newest");
-            enrichVoices(voices, userUuid);
-            return voices;
+            List<TTSVoice> ownVoices = ttsVoiceRepository.findByCreatorIdAndNotDeleted(userUuid);
+            List<Long> likedIds = ttsVoiceLikeRepository.findLikedVoiceIdsByUserId(userUuid);
+            List<TTSVoice> likedVoices = likedIds.isEmpty()
+                    ? Collections.emptyList()
+                    : ttsVoiceRepository.findAllByIdInAndNotDeleted(likedIds);
+
+            LinkedHashMap<Long, TTSVoice> voiceMap = new LinkedHashMap<>();
+            ownVoices.forEach(voice -> voiceMap.put(voice.getId(), voice));
+            likedVoices.forEach(voice -> {
+                if (voice.getId() != null) {
+                    voiceMap.putIfAbsent(voice.getId(), voice);
+                }
+            });
+
+            List<TTSVoice> mergedVoices = new ArrayList<>(voiceMap.values());
+            sortVoices(mergedVoices, "newest");
+            enrichVoices(mergedVoices, userUuid);
+            return mergedVoices;
         }).subscribeOn(Schedulers.boundedElastic())
         .flatMapMany(Flux::fromIterable);
     }
@@ -140,7 +156,30 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
         UUID currentUserId = parseUserId(userId);
 
         return Mono.fromCallable(() -> {
-            List<TTSVoice> voices = ttsVoiceRepository.findPublicVoices();
+            List<TTSVoice> voices = new ArrayList<>(ttsVoiceRepository.findPublicVoices());
+
+            if (currentUserId != null) {
+                List<TTSVoice> ownVoices = ttsVoiceRepository.findByCreatorIdAndNotDeleted(currentUserId);
+                List<Long> likedIds = ttsVoiceLikeRepository.findLikedVoiceIdsByUserId(currentUserId);
+                List<TTSVoice> likedVoices = likedIds.isEmpty()
+                        ? Collections.emptyList()
+                        : ttsVoiceRepository.findAllByIdInAndNotDeleted(likedIds);
+
+                LinkedHashMap<Long, TTSVoice> merged = new LinkedHashMap<>();
+                ownVoices.forEach(voice -> merged.put(voice.getId(), voice));
+                voices.forEach(voice -> {
+                    if (voice.getId() != null) {
+                        merged.putIfAbsent(voice.getId(), voice);
+                    }
+                });
+                likedVoices.forEach(voice -> {
+                    if (voice.getId() != null) {
+                        merged.putIfAbsent(voice.getId(), voice);
+                    }
+                });
+                voices = new ArrayList<>(merged.values());
+            }
+
             sortVoices(voices, sort);
             enrichVoices(voices, currentUserId);
             return voices;
@@ -325,6 +364,7 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
             }
             voice.setCreatorName(creatorNameMap.getOrDefault(voice.getCreatorId(), "匿名用户"));
             voice.setLiked(currentUserId != null && likedVoiceIds.contains(voice.getId()));
+            voice.setOwned(currentUserId != null && currentUserId.equals(voice.getCreatorId()));
         }
     }
 

@@ -103,6 +103,12 @@ public class TTSVoice {
     @Transient
     private String creatorName;
 
+    /**
+     * 是否为当前用户创建（仅返回时使用）
+     */
+    @Transient
+    private Boolean owned;
+
     // 关联实体
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", insertable = false, updatable = false)

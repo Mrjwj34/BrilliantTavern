@@ -18,7 +18,7 @@
       </div>
       <div class="voice-actions">
         <!-- 用户自己的音色显示编辑和删除按钮 -->
-        <template v-if="mode === 'owner'">
+  <template v-if="mode === 'owner' && isOwnedVoice">
           <button @click.stop="$emit('edit', voice)" class="edit-btn" title="编辑">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -103,7 +103,7 @@
 </template>
 
 <script>
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ttsAPI } from '@/api'
 
 const TEST_TEXT = '这是一个语音测试，用来演示音色效果。'
@@ -131,6 +131,12 @@ export default {
     const isLoading = ref(false)
     const audioElement = ref(null)
     const audioUrl = ref(null)
+    const isOwnedVoice = computed(() => {
+      if (!props.voice) return false
+      if (typeof props.voice.owned === 'boolean') return props.voice.owned
+      if (typeof props.voice.isOwner === 'boolean') return props.voice.isOwner
+      return false
+    })
 
     const handleCardClick = () => {
       emit('click', props.voice)
@@ -329,7 +335,8 @@ export default {
       isLoading,
       handleCardClick,
       handlePlay,
-      formatDate
+      formatDate,
+      isOwnedVoice
     }
   }
 }
