@@ -1,5 +1,5 @@
 <template>
-  <div class="character-market">
+  <div class="character-market" ref="marketRef">
     <!-- 第一层：标题和新建按钮 -->
     <div class="market-header">
       <h1 class="market-title">角色市场</h1>
@@ -423,7 +423,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted, nextTick, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, onUnmounted, watch } from 'vue'
 import { characterCardAPI, uploadAPI, ttsAPI } from '@/api'
 import { debounce, storage } from '@/utils'
 import CharacterCard from './CharacterCard.vue'
@@ -442,8 +442,11 @@ export default {
     const searchKeyword = ref('')
     const activeSort = ref('public')
     const loadTrigger = ref(null)
-    const observer = ref(null)
-    const showBackToTop = ref(false)
+  const observer = ref(null)
+  const pendingIntersect = ref(false)
+  const showBackToTop = ref(false)
+  const marketRef = ref(null)
+  const scrollContainer = ref(null)
     
     // 详情弹窗相关
     const showDetailModal = ref(false)
@@ -650,13 +653,24 @@ export default {
 
     // 设置无缝滚动
     const setupInfiniteScroll = () => {
-      if (!loadTrigger.value || observer.value) return
-
-      observer.value = new IntersectionObserver(
+      if (!observer.value) {
+        observer.value = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting && hasMore.value && !loading.value) {
-              loadMore()
+            if (!hasMore.value) {
+              pendingIntersect.value = false
+              return
+            }
+
+            if (entry.isIntersecting) {
+              if (loading.value) {
+                pendingIntersect.value = true
+              } else {
+                pendingIntersect.value = false
+                loadMore()
+              }
+            } else {
+              pendingIntersect.value = false
             }
           })
         },
@@ -665,10 +679,49 @@ export default {
           rootMargin: '100px',
           threshold: 0.1
         }
-      )
+        )
+      }
 
-      observer.value.observe(loadTrigger.value)
+      if (loadTrigger.value) {
+        observer.value.observe(loadTrigger.value)
+      }
     }
+
+    watch(
+      () => loadTrigger.value,
+      (newEl, oldEl) => {
+        if (observer.value && oldEl) {
+          observer.value.unobserve(oldEl)
+        }
+
+        if (newEl) {
+          setupInfiniteScroll()
+        }
+      }
+    )
+
+    watch(
+      () => hasMore.value,
+      (newHasMore) => {
+        if (!observer.value) return
+
+        if (newHasMore) {
+          setupInfiniteScroll()
+        } else if (loadTrigger.value) {
+          observer.value.unobserve(loadTrigger.value)
+        }
+        if (!newHasMore) {
+          pendingIntersect.value = false
+        }
+      }
+    )
+
+    watch(loading, (isLoading) => {
+      if (!isLoading && pendingIntersect.value && hasMore.value) {
+        pendingIntersect.value = false
+        loadMore()
+      }
+    })
 
     // 处理搜索
     const handleSearch = () => {
@@ -895,16 +948,33 @@ export default {
     }
 
     // 回到顶部
-    const scrollToTop = () => {
-      window.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-      })
+    const getScrollTop = (container) => {
+      if (!container) return 0
+      if (container === window) {
+        return window.pageYOffset || document.documentElement.scrollTop || 0
+      }
+      return container.scrollTop || 0
     }
 
-    // 监听滚动事件
     const handleScroll = () => {
-      showBackToTop.value = window.scrollY > 400
+      const primary = scrollContainer.value || window
+      const primaryTop = getScrollTop(primary)
+      const marketTop = getScrollTop(marketRef.value)
+      const windowTop = getScrollTop(window)
+      const maxTop = Math.max(primaryTop, marketTop, windowTop)
+      showBackToTop.value = maxTop > 400
+    }
+
+    const scrollToTop = () => {
+      const target = scrollContainer.value && scrollContainer.value !== window ? scrollContainer.value : window
+      if (target === window) {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      } else {
+        target.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+      if (marketRef.value && typeof marketRef.value.scrollTo === 'function') {
+        marketRef.value.scrollTo({ top: 0, behavior: 'smooth' })
+      }
     }
 
     // 初始化
@@ -912,9 +982,19 @@ export default {
       await fetchCards(true)
       await nextTick()
       setupInfiniteScroll()
-      
-      // 添加滚动监听
+
+      const workspace = document.querySelector('.workspace-content')
+      scrollContainer.value = workspace || window
+
+      if (scrollContainer.value && scrollContainer.value !== window) {
+        scrollContainer.value.addEventListener('scroll', handleScroll)
+      }
       window.addEventListener('scroll', handleScroll)
+      if (marketRef.value) {
+        marketRef.value.addEventListener('scroll', handleScroll)
+      }
+
+      handleScroll()
     })
 
     onUnmounted(() => {
@@ -922,9 +1002,14 @@ export default {
         observer.value.disconnect()
         observer.value = null
       }
-      
-      // 移除滚动监听
+
+      if (scrollContainer.value && scrollContainer.value !== window) {
+        scrollContainer.value.removeEventListener('scroll', handleScroll)
+      }
       window.removeEventListener('scroll', handleScroll)
+      if (marketRef.value) {
+        marketRef.value.removeEventListener('scroll', handleScroll)
+      }
     })
 
     // 头像上传相关函数
@@ -990,6 +1075,8 @@ export default {
       hasMore,
       loadTrigger,
       showBackToTop,
+  marketRef,
+  scrollContainer,
       showDetailModal,
       selectedCard,
       editMode,
@@ -1373,7 +1460,7 @@ export default {
   justify-content: center;
 
   &:hover {
-    background: var(--primary-hover);
+    background: var(--primary-dark);
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
   }
