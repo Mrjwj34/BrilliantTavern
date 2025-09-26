@@ -489,15 +489,9 @@ export default {
     })
     
     const pagination = reactive({
-      page: 0,
       size: 20,
-      totalPages: 0,
-      totalElements: 0,
-      hasNext: false,
-      hasPrevious: false,
-      first: true,
-      last: false,
-      numberOfElements: 0
+      nextCursor: null,
+      hasNext: true
     })
 
     const sortTabs = [
@@ -591,79 +585,57 @@ export default {
     // 获取角色卡数据
     const fetchCards = async (reset = false) => {
       if (loading.value) return
+      if (!pagination.hasNext && !reset) return
 
       loading.value = true
       try {
         if (reset) {
-          pagination.page = 0
           cards.value = []
+          pagination.nextCursor = null
+          pagination.hasNext = true
         }
 
         const params = {
-          page: pagination.page,
-          size: pagination.size,
-          keyword: searchKeyword.value.trim() || undefined
+          filter: activeSort.value,
+          size: pagination.size
         }
 
-        let response
-        if (searchKeyword.value.trim()) {
-          response = await characterCardAPI.searchCards(params)
-        } else {
-          switch (activeSort.value) {
-            case 'popular':
-              response = await characterCardAPI.getPopularCards(params)
-              break
-            case 'latest':
-              response = await characterCardAPI.getLatestCards(params)
-              break
-            case 'my':
-              response = await characterCardAPI.getMyCards(params)
-              break
-            case 'liked':
-              response = await characterCardAPI.getLikedCards(params)
-              break
-            default:
-              response = await characterCardAPI.getPublicCards(params)
-          }
+        const trimmedKeyword = searchKeyword.value.trim()
+        if (trimmedKeyword) {
+          params.keyword = trimmedKeyword
         }
+
+        if (!reset && pagination.nextCursor) {
+          params.cursor = pagination.nextCursor
+        }
+
+        const response = await characterCardAPI.getMarketCards(params)
 
         if (response && response.code === 200) {
-          const { 
-            content, 
-            totalPages, 
-            totalElements, 
-            number,
-            hasNext,
-            hasPrevious,
-            first,
-            last,
-            numberOfElements
-          } = response.data
-          
-          // 确保每个卡片的 likesCount 字段是数字
-          const processedContent = content.map(card => ({
+          const { items = [], nextCursor = null, hasNext = false } = response.data || {}
+
+          const processedContent = items.map(card => ({
             ...card,
             likesCount: typeof card.likesCount === 'number' ? card.likesCount : 0,
             isLikedByCurrentUser: Boolean(card.isLikedByCurrentUser)
           }))
-          
+
           if (reset) {
             cards.value = processedContent
           } else {
             cards.value.push(...processedContent)
           }
 
-          pagination.totalPages = totalPages
-          pagination.totalElements = totalElements
-          pagination.page = number
-          pagination.hasNext = hasNext
-          pagination.hasPrevious = hasPrevious
-          pagination.first = first
-          pagination.last = last
-          pagination.numberOfElements = numberOfElements
+          pagination.nextCursor = nextCursor || null
+          pagination.hasNext = !!hasNext
         }
       } catch (error) {
         console.error('获取角色卡失败:', error)
+        if (reset) {
+          cards.value = []
+          pagination.nextCursor = null
+          pagination.hasNext = false
+        }
       } finally {
         loading.value = false
       }
@@ -671,8 +643,7 @@ export default {
 
     // 加载下一页
     const loadMore = async () => {
-      if (hasMore.value && !loading.value) {
-        pagination.page++
+      if (!loading.value && pagination.hasNext) {
         await fetchCards()
       }
     }
@@ -708,7 +679,8 @@ export default {
     const handleSortChange = (sort) => {
       if (activeSort.value !== sort) {
         activeSort.value = sort
-        searchKeyword.value = '' // 切换排序时清除搜索
+        fetchCards(true)
+      } else {
         fetchCards(true)
       }
     }

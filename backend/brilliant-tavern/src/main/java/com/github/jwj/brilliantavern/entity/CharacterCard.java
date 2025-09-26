@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -77,6 +78,7 @@ public class CharacterCard {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CharacterCardData {
         private String description;
         private String personality;
@@ -87,6 +89,7 @@ public class CharacterCard {
         @Builder
         @NoArgsConstructor
         @AllArgsConstructor
+        @JsonIgnoreProperties(ignoreUnknown = true)
         public static class ExampleDialog {
             private String user;
             private String assistant;

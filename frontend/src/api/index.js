@@ -60,6 +60,11 @@ export const characterCardAPI = {
     return request.get('/character-cards/search', { params })
   },
 
+  // 游标分页获取角色市场角色卡
+  getMarketCards(params) {
+    return request.get('/character-cards/market', { params })
+  },
+
   // 获取角色卡详情
   getCardDetail(cardId) {
     return request.get(`/character-cards/${cardId}`)
@@ -139,6 +144,11 @@ export const ttsAPI = {
   // 获取公开音色列表
   getPublicVoices(params = {}) {
     return request.get('/tts/reference/public', { params })
+  },
+
+  // 游标分页获取音色市场
+  getMarketVoices(params = {}) {
+    return request.get('/tts/reference/market', { params })
   },
 
   // 获取音色详情

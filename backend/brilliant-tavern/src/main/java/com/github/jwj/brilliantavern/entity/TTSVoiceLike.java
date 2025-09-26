@@ -1,10 +1,7 @@
 package com.github.jwj.brilliantavern.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.EmbeddedId;
-import jakarta.persistence.Entity;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -28,6 +25,11 @@ public class TTSVoiceLike {
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "voice_id", insertable = false, updatable = false)
+    @JsonIgnore
+    private TTSVoice voice;
 
     @PrePersist
     protected void onCreate() {

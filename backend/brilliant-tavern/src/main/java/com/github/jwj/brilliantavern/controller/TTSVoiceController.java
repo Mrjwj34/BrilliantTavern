@@ -1,6 +1,9 @@
 package com.github.jwj.brilliantavern.controller;
 
+import com.github.jwj.brilliantavern.dto.CursorPageResponse;
+import com.github.jwj.brilliantavern.dto.VoiceMarketFilter;
 import com.github.jwj.brilliantavern.entity.TTSVoice;
+import com.github.jwj.brilliantavern.exception.BusinessException;
 import com.github.jwj.brilliantavern.service.TTSManagerService;
 import com.github.jwj.brilliantavern.service.tts.TTSResponse;
 import com.github.jwj.brilliantavern.service.tts.TTSVoiceService;
@@ -107,9 +110,9 @@ public class TTSVoiceController {
         description = "获取指定用户可访问的语音列表"
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "查询成功",
-                content = @Content(mediaType = "application/json", 
-                        schema = @Schema(implementation = TTSVoice.class)))
+    @ApiResponse(responseCode = "200", description = "查询成功",
+        content = @Content(mediaType = "application/json",
+            schema = @Schema(implementation = CursorPageResponse.class)))
     })
     @GetMapping
     public Flux<TTSVoice> getUserVoices(
@@ -138,6 +141,49 @@ public class TTSVoiceController {
             @RequestParam(value = "sort", defaultValue = "newest") String sort) {
         log.debug("获取公开语音列表: userId={}, sort={}", userId, sort);
         return ttsVoiceService.getPublicVoices(userId, sort);
+    }
+
+    @Operation(
+        summary = "获取音色市场列表",
+        description = "支持筛选、搜索和游标分页的音色市场数据"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "查询成功",
+                content = @Content(mediaType = "application/json",
+                        schema = @Schema(implementation = TTSVoice.class)))
+    })
+    @GetMapping("/market")
+    public Mono<ResponseEntity<CursorPageResponse<TTSVoice>>> getVoiceMarket(
+        @Parameter(description = "筛选类型", schema = @Schema(defaultValue = "public"))
+        @RequestParam(defaultValue = "public") String filter,
+            @Parameter(description = "搜索关键词")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "游标")
+            @RequestParam(required = false) String cursor,
+            @Parameter(description = "返回数量", schema = @Schema(defaultValue = "20"))
+            @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "用户ID，用于我的/点赞筛选")
+            @RequestParam(required = false) String userId) {
+
+        VoiceMarketFilter marketFilter = VoiceMarketFilter.fromString(filter);
+        log.debug("获取音色市场: filter={}, keyword={}, size={}, cursor={}, userId={}", marketFilter, keyword, size, cursor, userId);
+
+        return ttsVoiceService.getVoiceMarket(marketFilter, keyword, cursor, size, userId)
+                .map(ResponseEntity::ok)
+                .onErrorResume(error -> {
+                    if (error instanceof SecurityException) {
+                        return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
+                    }
+                    if (error instanceof BusinessException businessException) {
+                        HttpStatus status = HttpStatus.resolve(businessException.getCode());
+                        if (status == null) {
+                            status = HttpStatus.BAD_REQUEST;
+                        }
+                        return Mono.just(ResponseEntity.status(status).build());
+                    }
+                    log.error("获取音色市场失败", error);
+                    return Mono.just(ResponseEntity.internalServerError().build());
+                });
     }
 
     @Operation(

@@ -12,4 +12,3 @@ public class BrilliantTavernApplication {
 
 }
 
-//TODO: 滚动翻页有问题

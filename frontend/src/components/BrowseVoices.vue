@@ -56,7 +56,7 @@
 
     <div class="browse-content">
       <!-- 加载状态 -->
-      <div v-if="loading" class="loading-state">
+      <div v-if="isInitialLoading" class="loading-state">
         <div class="loading-spinner">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
             <path d="M21 12a9 9 0 11-6.219-8.56"/>
@@ -66,7 +66,7 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-else-if="voices.length === 0" class="empty-state">
+      <div v-else-if="isEmptyState" class="empty-state">
         <div class="empty-icon">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <circle cx="11" cy="11" r="8"/>
@@ -81,25 +81,48 @@
       </div>
 
       <!-- 音色列表 -->
-      <div v-else class="voices-grid">
-        <VoiceCard
-          v-for="voice in voices"
-          :key="voice.id"
-          :voice="voice"
-          mode="browse"
-          @favorite="favoriteVoice"
-        />
+      <div v-else>
+        <div class="voices-grid">
+          <VoiceCard
+            v-for="voice in voices"
+            :key="voice.id"
+            :voice="voice"
+            mode="browse"
+            @favorite="favoriteVoice"
+          />
+        </div>
+
+        <div v-if="hasMore" ref="loadTrigger" class="load-trigger"></div>
+
+        <!-- 加载更多指示器 -->
+        <div v-if="loading && voices.length > 0" class="load-more-indicator">
+          <div class="loading-spinner">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+              <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+          </div>
+          <span>加载更多...</span>
+        </div>
+
+        <!-- 底部提示 -->
+        <div v-if="!loading && !hasMore && voices.length > 0" class="bottom-tip">
+          <div class="bottom-tip-line"></div>
+          <span class="bottom-tip-text">已经到底了</span>
+          <div class="bottom-tip-line"></div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { ttsAPI } from '@/api'
 import { storage } from '@/utils'
 import { notification } from '@/utils/notification'
 import VoiceCard from './VoiceCard.vue'
+
+const PAGE_SIZE = 20
 
 export default {
   name: 'BrowseVoices',
@@ -111,85 +134,132 @@ export default {
     const voices = ref([])
     const selectedVoice = ref(null)
     const loading = ref(false)
+    const hasMore = ref(true)
+    const nextCursor = ref(null)
     const searchKeyword = ref('')
     const sortOption = ref('newest')
     const searchDebounce = ref(null)
     const likeRequesting = ref(false)
+    const loadTrigger = ref(null)
 
-    const extractVoices = (response) => {
-      if (Array.isArray(response)) return response
-      if (response?.data && Array.isArray(response.data)) return response.data
-      if (Array.isArray(response?.records)) return response.records
-      if (response?.data?.records && Array.isArray(response.data.records)) return response.data.records
-      console.warn('意外的响应格式:', response)
-      return []
-    }
+    let observer = null
 
-    const normalizeVoice = (voice) => ({
+    const isInitialLoading = computed(() => loading.value && voices.value.length === 0)
+    const isEmptyState = computed(() => !loading.value && voices.value.length === 0)
+
+    const getUserId = () => storage.get('user')?.userId || ''
+
+    const getFilterBySort = () => (sortOption.value === 'likes' ? 'popular' : 'latest')
+
+    const normalizeVoice = (voice = {}) => ({
       ...voice,
       likesCount: voice?.likesCount ?? voice?.favoriteCount ?? 0,
       isFavorited: Boolean(voice?.isFavorited ?? voice?.liked),
       creatorName: voice?.creatorName || voice?.creatorUsername || voice?.creator?.username || '匿名用户'
     })
 
-    const processVoiceList = (list) => list.map(normalizeVoice)
+    const processVoiceList = (list = []) => list.map(normalizeVoice)
 
-    const getUserId = () => storage.get('user')?.userId || ''
-
-    const fetchVoices = async () => {
-      loading.value = true
-      try {
-        const params = {
-          sort: sortOption.value
-        }
-        const userId = getUserId()
-        if (userId) {
-          params.userId = userId
-        }
-        const response = await ttsAPI.getPublicVoices(params)
-        const voiceData = extractVoices(response)
-        voices.value = processVoiceList(voiceData)
-      } catch (error) {
-        console.error('获取公开音色列表失败:', error)
-        notification.error(error?.response?.data?.message || '获取公开音色失败，请稍后重试')
-        voices.value = []
-      } finally {
-        loading.value = false
+    const cleanupObserver = () => {
+      if (observer) {
+        observer.disconnect()
+        observer = null
       }
     }
 
-    const searchVoices = async (keyword) => {
-      const trimmed = keyword.trim()
-      if (!trimmed) {
-        await fetchVoices()
+    const loadVoices = async (reset = false) => {
+      if (loading.value) return
+      if (reset) {
+        nextCursor.value = null
+        hasMore.value = true
+        voices.value = []
+      } else if (!hasMore.value) {
         return
       }
 
       loading.value = true
+
       try {
-        const response = await ttsAPI.searchVoices(
-          trimmed,
-          getUserId(),
-          true,
-          sortOption.value
-        )
-        const voiceData = extractVoices(response)
-        voices.value = processVoiceList(voiceData)
+        const params = {
+          filter: getFilterBySort(),
+          size: PAGE_SIZE
+        }
+
+        const keyword = searchKeyword.value.trim()
+        if (keyword) {
+          params.keyword = keyword
+        }
+        if (!reset && nextCursor.value) {
+          params.cursor = nextCursor.value
+        }
+
+        const userId = getUserId()
+        if (userId) {
+          params.userId = userId
+        }
+
+        const response = await ttsAPI.getMarketVoices(params)
+        const { items = [], nextCursor: cursorValue = null, hasNext } = response || {}
+        const normalized = processVoiceList(Array.isArray(items) ? items : [])
+
+        if (reset) {
+          voices.value = normalized
+        } else {
+          const merged = [...voices.value]
+          normalized.forEach(item => {
+            const index = merged.findIndex(existing => existing.id === item.id)
+            if (index === -1) {
+              merged.push(item)
+            } else {
+              merged[index] = { ...merged[index], ...item }
+            }
+          })
+          voices.value = merged
+        }
+
+        nextCursor.value = cursorValue || null
+        const shouldHaveNext = typeof hasNext === 'boolean' ? hasNext : normalized.length === PAGE_SIZE
+        hasMore.value = shouldHaveNext
       } catch (error) {
-        console.error('搜索音色失败:', error)
-        notification.error(error?.response?.data?.message || '搜索音色失败，请稍后重试')
-        voices.value = []
+        console.error('获取音色市场失败:', error)
+        notification.error(error?.response?.data?.message || error?.message || '获取音色失败，请稍后重试')
+        if (reset) {
+          voices.value = []
+        }
+        hasMore.value = false
       } finally {
         loading.value = false
+        nextTick(() => {
+          if (hasMore.value) {
+            initObserver()
+          } else {
+            cleanupObserver()
+          }
+        })
       }
     }
 
-    const refreshVoices = () => {
-      if (searchKeyword.value.trim()) {
-        searchVoices(searchKeyword.value)
-      } else {
-        fetchVoices()
+    const initObserver = () => {
+      cleanupObserver()
+      if (!hasMore.value || !loadTrigger.value) {
+        return
       }
+
+      observer = new IntersectionObserver(entries => {
+        const entry = entries[0]
+        if (entry?.isIntersecting && hasMore.value && !loading.value) {
+          loadVoices(false)
+        }
+      }, {
+        rootMargin: '0px 0px 200px 0px',
+        threshold: 0.1
+      })
+
+      observer.observe(loadTrigger.value)
+    }
+
+    const refreshVoices = () => {
+      loadVoices(true)
     }
 
     const executeSearch = () => {
@@ -197,7 +267,7 @@ export default {
         clearTimeout(searchDebounce.value)
         searchDebounce.value = null
       }
-      searchVoices(searchKeyword.value)
+      loadVoices(true)
     }
 
     const handleSearchInput = () => {
@@ -205,20 +275,21 @@ export default {
         clearTimeout(searchDebounce.value)
       }
       searchDebounce.value = setTimeout(() => {
-        searchVoices(searchKeyword.value)
+        loadVoices(true)
         searchDebounce.value = null
       }, 300)
     }
 
     const clearSearch = () => {
+      if (!searchKeyword.value) return
       searchKeyword.value = ''
-      executeSearch()
+      loadVoices(true)
     }
 
     const changeSort = (value) => {
       if (sortOption.value === value) return
       sortOption.value = value
-      refreshVoices()
+      loadVoices(true)
     }
 
     const selectVoice = (voice) => {
@@ -271,21 +342,42 @@ export default {
     }
 
     onMounted(() => {
-      fetchVoices()
+      loadVoices(true)
+    })
+
+    watch(loadTrigger, (el) => {
+      if (el && hasMore.value) {
+        initObserver()
+      } else if (!el) {
+        cleanupObserver()
+      }
+    })
+
+    watch(hasMore, (value) => {
+      if (!value) {
+        cleanupObserver()
+      } else if (loadTrigger.value) {
+        initObserver()
+      }
     })
 
     onUnmounted(() => {
       if (searchDebounce.value) {
         clearTimeout(searchDebounce.value)
       }
+      cleanupObserver()
     })
 
     return {
       voices,
       selectedVoice,
       loading,
+      hasMore,
+      isInitialLoading,
+      isEmptyState,
       searchKeyword,
       sortOption,
+      loadTrigger,
       refreshVoices,
       handleSearchInput,
       executeSearch,
@@ -512,6 +604,54 @@ export default {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: $spacing-lg;
+}
+
+.load-trigger {
+  width: 100%;
+  height: 1px;
+}
+
+.load-more-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing;
+  padding: 2rem 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+
+  .loading-spinner {
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary-color);
+    margin: 0;
+  }
+}
+
+.bottom-tip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing;
+  padding: 2rem 0;
+  margin-top: $spacing;
+}
+
+.bottom-tip-line {
+  flex: 1;
+  height: 1px;
+  max-width: 100px;
+  background: linear-gradient(to right, transparent, var(--border-light), transparent);
+}
+
+.bottom-tip-text {
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  padding: 0 $spacing-sm;
 }
 
 // 动画

@@ -1,5 +1,7 @@
 package com.github.jwj.brilliantavern.service.tts.impl;
 
+import com.github.jwj.brilliantavern.dto.CursorPageResponse;
+import com.github.jwj.brilliantavern.dto.VoiceMarketFilter;
 import com.github.jwj.brilliantavern.entity.TTSVoice;
 import com.github.jwj.brilliantavern.entity.TTSVoiceLike;
 import com.github.jwj.brilliantavern.entity.TTSVoiceLikeId;
@@ -11,12 +13,16 @@ import com.github.jwj.brilliantavern.service.TTSCacheService;
 import com.github.jwj.brilliantavern.service.tts.TTSVoiceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.TypedQuery;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,6 +35,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Base64;
 
 /**
  * TTS语音管理服务实现
@@ -43,6 +50,9 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
     private final UserRepository userRepository;
     private final FishSpeechTTSService fishSpeechService;
     private final TTSCacheService ttsCacheService;
+
+    @PersistenceContext
+    private EntityManager entityManager;
     
     @Override
     @Transactional
@@ -273,6 +283,54 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
     }
 
     @Override
+    public Mono<CursorPageResponse<TTSVoice>> getVoiceMarket(VoiceMarketFilter filter, String keyword, String cursor, int size, String userId) {
+        return Mono.fromCallable(() -> {
+            int normalizedSize = Math.min(Math.max(size, 1), 50);
+            UUID currentUserId = parseUserId(userId);
+
+            if (filter.requiresLogin() && currentUserId == null) {
+                throw new SecurityException("请先登录以查看该列表");
+            }
+
+            VoiceCursorData cursorData = parseCursor(filter, cursor);
+            String normalizedKeyword = normalizeKeyword(keyword);
+            int fetchLimit = normalizedSize + 1;
+
+            return switch (filter) {
+                case LIKED -> buildLikedVoiceResponse(
+                        fetchLikedVoices(currentUserId, normalizedKeyword, cursorData, fetchLimit),
+                        normalizedSize,
+                        currentUserId
+                );
+                case MY -> buildStandardVoiceResponse(
+                        fetchMyVoices(currentUserId, normalizedKeyword, cursorData, fetchLimit),
+                        VoiceMarketFilter.MY,
+                        normalizedSize,
+                        currentUserId
+                );
+                case POPULAR -> buildStandardVoiceResponse(
+                        fetchPopularVoices(currentUserId, normalizedKeyword, cursorData, fetchLimit),
+                        VoiceMarketFilter.POPULAR,
+                        normalizedSize,
+                        currentUserId
+                );
+                case LATEST -> buildStandardVoiceResponse(
+                        fetchLatestVoices(currentUserId, normalizedKeyword, cursorData, fetchLimit),
+                        VoiceMarketFilter.LATEST,
+                        normalizedSize,
+                        currentUserId
+                );
+                case PUBLIC -> buildStandardVoiceResponse(
+                        fetchLatestVoices(currentUserId, normalizedKeyword, cursorData, fetchLimit),
+                        VoiceMarketFilter.PUBLIC,
+                        normalizedSize,
+                        currentUserId
+                );
+            };
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
     @Transactional
     public Mono<TTSVoice> likeVoice(String voiceId, String userId) {
         log.info("点赞语音: voiceId={}, userId={}", voiceId, userId);
@@ -332,6 +390,335 @@ public class TTSVoiceServiceImpl implements TTSVoiceService {
             return null;
         }
         return UUID.fromString(userId);
+    }
+
+    private CursorPageResponse<TTSVoice> buildStandardVoiceResponse(
+            List<TTSVoice> fetchedVoices,
+            VoiceMarketFilter filter,
+            int pageSize,
+            UUID currentUserId) {
+
+        boolean hasNext = fetchedVoices.size() > pageSize;
+        List<TTSVoice> limited = hasNext
+                ? new ArrayList<>(fetchedVoices.subList(0, pageSize))
+                : new ArrayList<>(fetchedVoices);
+
+        enrichVoices(limited, currentUserId);
+
+        String nextCursor = null;
+        if (hasNext && !limited.isEmpty()) {
+            TTSVoice lastVoice = limited.get(limited.size() - 1);
+            VoiceCursorData nextCursorData = switch (filter) {
+                case POPULAR -> VoiceCursorData.byPopularity(
+                        lastVoice.getLikesCount() == null ? 0 : lastVoice.getLikesCount(),
+                        lastVoice.getCreatedAt(),
+                        lastVoice.getId()
+                );
+                case PUBLIC, LATEST, MY -> VoiceCursorData.byCreatedAt(
+                        lastVoice.getCreatedAt(),
+                        lastVoice.getId()
+                );
+                case LIKED -> null;
+            };
+            nextCursor = encodeCursor(filter, nextCursorData);
+        }
+
+        return CursorPageResponse.<TTSVoice>builder()
+                .items(limited)
+                .nextCursor(nextCursor)
+                .hasNext(hasNext)
+                .build();
+    }
+
+    private CursorPageResponse<TTSVoice> buildLikedVoiceResponse(
+            List<TTSVoiceLike> likes,
+            int pageSize,
+            UUID currentUserId) {
+
+        boolean hasNext = likes.size() > pageSize;
+        List<TTSVoiceLike> limited = hasNext
+                ? new ArrayList<>(likes.subList(0, pageSize))
+                : new ArrayList<>(likes);
+
+        List<TTSVoice> voices = limited.stream()
+                .map(TTSVoiceLike::getVoice)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        enrichVoices(voices, currentUserId);
+
+        String nextCursor = null;
+        if (hasNext && !limited.isEmpty()) {
+            TTSVoiceLike lastLike = limited.get(limited.size() - 1);
+            nextCursor = encodeCursor(
+                    VoiceMarketFilter.LIKED,
+                    VoiceCursorData.byLikedAt(lastLike.getCreatedAt(),
+                            lastLike.getVoice() != null ? lastLike.getVoice().getId() : null)
+            );
+        }
+
+        return CursorPageResponse.<TTSVoice>builder()
+                .items(voices)
+                .nextCursor(nextCursor)
+                .hasNext(hasNext)
+                .build();
+    }
+
+    private List<TTSVoice> fetchLatestVoices(UUID currentUserId, String keyword, VoiceCursorData cursorData, int limit) {
+    StringBuilder jpql = new StringBuilder("SELECT v FROM TTSVoice v LEFT JOIN FETCH v.creator WHERE v.deleted = false");
+        if (currentUserId != null) {
+            jpql.append(" AND (v.isPublic = true OR v.creatorId = :currentUserId)");
+        } else {
+            jpql.append(" AND v.isPublic = true");
+        }
+        if (keyword != null) {
+            appendVoiceKeywordCondition(jpql, "v");
+        }
+        if (cursorData != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            jpql.append(" AND (v.createdAt < :cursorCreated OR (v.createdAt = :cursorCreated AND v.id < :cursorVoiceId))");
+        }
+        jpql.append(" ORDER BY v.createdAt DESC, v.id DESC");
+
+        TypedQuery<TTSVoice> query = entityManager.createQuery(jpql.toString(), TTSVoice.class);
+        if (currentUserId != null) {
+            query.setParameter("currentUserId", currentUserId);
+        }
+        if (keyword != null) {
+            query.setParameter("keyword", buildKeywordPattern(keyword));
+        }
+        if (cursorData != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            query.setParameter("cursorCreated", cursorData.getCreatedAt());
+            query.setParameter("cursorVoiceId", cursorData.getVoiceId());
+        }
+        query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    private List<TTSVoice> fetchPopularVoices(UUID currentUserId, String keyword, VoiceCursorData cursorData, int limit) {
+    StringBuilder jpql = new StringBuilder("SELECT v FROM TTSVoice v LEFT JOIN FETCH v.creator WHERE v.deleted = false");
+        if (currentUserId != null) {
+            jpql.append(" AND (v.isPublic = true OR v.creatorId = :currentUserId)");
+        } else {
+            jpql.append(" AND v.isPublic = true");
+        }
+        if (keyword != null) {
+            appendVoiceKeywordCondition(jpql, "v");
+        }
+        if (cursorData != null && cursorData.getLikesCount() != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            jpql.append(" AND (COALESCE(v.likesCount, 0) < :cursorLikes OR (COALESCE(v.likesCount, 0) = :cursorLikes AND (v.createdAt < :cursorCreated OR (v.createdAt = :cursorCreated AND v.id < :cursorVoiceId))))");
+        }
+        jpql.append(" ORDER BY COALESCE(v.likesCount, 0) DESC, v.createdAt DESC, v.id DESC");
+
+        TypedQuery<TTSVoice> query = entityManager.createQuery(jpql.toString(), TTSVoice.class);
+        if (currentUserId != null) {
+            query.setParameter("currentUserId", currentUserId);
+        }
+        if (keyword != null) {
+            query.setParameter("keyword", buildKeywordPattern(keyword));
+        }
+        if (cursorData != null && cursorData.getLikesCount() != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            query.setParameter("cursorLikes", cursorData.getLikesCount());
+            query.setParameter("cursorCreated", cursorData.getCreatedAt());
+            query.setParameter("cursorVoiceId", cursorData.getVoiceId());
+        }
+        query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    private List<TTSVoice> fetchMyVoices(UUID currentUserId, String keyword, VoiceCursorData cursorData, int limit) {
+        if (currentUserId == null) {
+            return Collections.emptyList();
+        }
+    StringBuilder jpql = new StringBuilder("SELECT v FROM TTSVoice v LEFT JOIN FETCH v.creator WHERE v.deleted = false AND v.creatorId = :currentUserId");
+        if (keyword != null) {
+            appendVoiceKeywordCondition(jpql, "v");
+        }
+        if (cursorData != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            jpql.append(" AND (v.createdAt < :cursorCreated OR (v.createdAt = :cursorCreated AND v.id < :cursorVoiceId))");
+        }
+        jpql.append(" ORDER BY v.createdAt DESC, v.id DESC");
+
+        TypedQuery<TTSVoice> query = entityManager.createQuery(jpql.toString(), TTSVoice.class);
+        query.setParameter("currentUserId", currentUserId);
+        if (keyword != null) {
+            query.setParameter("keyword", buildKeywordPattern(keyword));
+        }
+        if (cursorData != null && cursorData.getCreatedAt() != null && cursorData.getVoiceId() != null) {
+            query.setParameter("cursorCreated", cursorData.getCreatedAt());
+            query.setParameter("cursorVoiceId", cursorData.getVoiceId());
+        }
+        query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    private List<TTSVoiceLike> fetchLikedVoices(UUID currentUserId, String keyword, VoiceCursorData cursorData, int limit) {
+        if (currentUserId == null) {
+            return Collections.emptyList();
+        }
+        StringBuilder jpql = new StringBuilder(
+                "SELECT l FROM TTSVoiceLike l " +
+                "JOIN FETCH l.voice v " +
+                "LEFT JOIN FETCH v.creator " +
+                "WHERE l.id.userId = :currentUserId " +
+                "AND v.deleted = false " +
+                "AND (v.isPublic = true OR v.creatorId = :currentUserId)"
+        );
+        if (keyword != null) {
+            appendVoiceKeywordCondition(jpql, "v");
+        }
+        if (cursorData != null && cursorData.getLikeCreatedAt() != null && cursorData.getVoiceId() != null) {
+            jpql.append(" AND (l.createdAt < :cursorLikedAt OR (l.createdAt = :cursorLikedAt AND v.id < :cursorVoiceId))");
+        }
+        jpql.append(" ORDER BY l.createdAt DESC, v.id DESC");
+
+        TypedQuery<TTSVoiceLike> query = entityManager.createQuery(jpql.toString(), TTSVoiceLike.class);
+        query.setParameter("currentUserId", currentUserId);
+        if (keyword != null) {
+            query.setParameter("keyword", buildKeywordPattern(keyword));
+        }
+        if (cursorData != null && cursorData.getLikeCreatedAt() != null && cursorData.getVoiceId() != null) {
+            query.setParameter("cursorLikedAt", cursorData.getLikeCreatedAt());
+            query.setParameter("cursorVoiceId", cursorData.getVoiceId());
+        }
+        query.setMaxResults(limit);
+        return query.getResultList();
+    }
+
+    private void appendVoiceKeywordCondition(StringBuilder jpql, String alias) {
+        jpql.append(" AND (LOWER(").append(alias).append(".name) LIKE :keyword " +
+                "OR LOWER(").append(alias).append(".description) LIKE :keyword)");
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String trimmed = keyword.trim().toLowerCase();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String buildKeywordPattern(String keyword) {
+        return "%" + keyword + "%";
+    }
+
+    private VoiceCursorData parseCursor(VoiceMarketFilter filter, String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] decoded = Base64.getUrlDecoder().decode(cursor);
+            String decodedStr = new String(decoded, StandardCharsets.UTF_8);
+            String[] parts = decodedStr.split("\\|", -1);
+            if (parts.length == 0 || !filter.name().equals(parts[0])) {
+                return null;
+            }
+            return switch (filter) {
+                case POPULAR -> {
+                    if (parts.length < 4) {
+                        yield null;
+                    }
+                    Integer likes = Integer.parseInt(parts[1]);
+                    OffsetDateTime created = OffsetDateTime.parse(parts[2]);
+                    Long voiceId = Long.parseLong(parts[3]);
+                    yield VoiceCursorData.byPopularity(likes, created, voiceId);
+                }
+                case PUBLIC, LATEST, MY -> {
+                    if (parts.length < 3) {
+                        yield null;
+                    }
+                    OffsetDateTime created = OffsetDateTime.parse(parts[1]);
+                    Long voiceId = Long.parseLong(parts[2]);
+                    yield VoiceCursorData.byCreatedAt(created, voiceId);
+                }
+                case LIKED -> {
+                    if (parts.length < 3) {
+                        yield null;
+                    }
+                    OffsetDateTime likedAt = OffsetDateTime.parse(parts[1]);
+                    Long voiceId = Long.parseLong(parts[2]);
+                    yield VoiceCursorData.byLikedAt(likedAt, voiceId);
+                }
+            };
+        } catch (Exception ex) {
+            log.warn("解析音色游标失败: filter={}, cursor={}", filter, cursor, ex);
+            return null;
+        }
+    }
+
+    private String encodeCursor(VoiceMarketFilter filter, VoiceCursorData cursorData) {
+        if (cursorData == null) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        parts.add(filter.name());
+        switch (filter) {
+            case POPULAR -> {
+                if (cursorData.getLikesCount() == null || cursorData.getCreatedAt() == null || cursorData.getVoiceId() == null) {
+                    return null;
+                }
+                parts.add(String.valueOf(cursorData.getLikesCount()));
+                parts.add(cursorData.getCreatedAt().toString());
+                parts.add(cursorData.getVoiceId().toString());
+            }
+            case PUBLIC, LATEST, MY -> {
+                if (cursorData.getCreatedAt() == null || cursorData.getVoiceId() == null) {
+                    return null;
+                }
+                parts.add(cursorData.getCreatedAt().toString());
+                parts.add(cursorData.getVoiceId().toString());
+            }
+            case LIKED -> {
+                if (cursorData.getLikeCreatedAt() == null || cursorData.getVoiceId() == null) {
+                    return null;
+                }
+                parts.add(cursorData.getLikeCreatedAt().toString());
+                parts.add(cursorData.getVoiceId().toString());
+            }
+        }
+        String rawCursor = String.join("|", parts);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(rawCursor.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static class VoiceCursorData {
+        private final Integer likesCount;
+        private final OffsetDateTime createdAt;
+        private final Long voiceId;
+        private final OffsetDateTime likeCreatedAt;
+
+        private VoiceCursorData(Integer likesCount, OffsetDateTime createdAt, Long voiceId, OffsetDateTime likeCreatedAt) {
+            this.likesCount = likesCount;
+            this.createdAt = createdAt;
+            this.voiceId = voiceId;
+            this.likeCreatedAt = likeCreatedAt;
+        }
+
+        static VoiceCursorData byPopularity(Integer likesCount, OffsetDateTime createdAt, Long voiceId) {
+            return new VoiceCursorData(likesCount, createdAt, voiceId, null);
+        }
+
+        static VoiceCursorData byCreatedAt(OffsetDateTime createdAt, Long voiceId) {
+            return new VoiceCursorData(null, createdAt, voiceId, null);
+        }
+
+        static VoiceCursorData byLikedAt(OffsetDateTime likedAt, Long voiceId) {
+            return new VoiceCursorData(null, null, voiceId, likedAt);
+        }
+
+        Integer getLikesCount() {
+            return likesCount;
+        }
+
+        OffsetDateTime getCreatedAt() {
+            return createdAt;
+        }
+
+        Long getVoiceId() {
+            return voiceId;
+        }
+
+        OffsetDateTime getLikeCreatedAt() {
+            return likeCreatedAt;
+        }
     }
 
     private void enrichVoices(List<TTSVoice> voices, UUID currentUserId) {

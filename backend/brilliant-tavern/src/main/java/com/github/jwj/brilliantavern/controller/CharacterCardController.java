@@ -1,9 +1,11 @@
 package com.github.jwj.brilliantavern.controller;
 
 import com.github.jwj.brilliantavern.dto.ApiResponse;
+import com.github.jwj.brilliantavern.dto.CharacterCardMarketFilter;
 import com.github.jwj.brilliantavern.dto.CharacterCardResponse;
 import com.github.jwj.brilliantavern.dto.CreateCharacterCardRequest;
 import com.github.jwj.brilliantavern.dto.LikeResponse;
+import com.github.jwj.brilliantavern.dto.CursorPageResponse;
 import com.github.jwj.brilliantavern.dto.UpdateCharacterCardRequest;
 import com.github.jwj.brilliantavern.security.UserPrincipal;
 import com.github.jwj.brilliantavern.service.CharacterCardService;
@@ -47,6 +49,30 @@ public class CharacterCardController {
         
         CharacterCardResponse response = characterCardService.createCharacterCard(userPrincipal.getId(), request);
         return ResponseEntity.ok(ApiResponse.success("角色卡创建成功", response));
+    }
+
+    /**
+     * 角色市场综合查询（游标分页）
+     */
+    @Operation(summary = "获取角色市场列表", description = "支持搜索、筛选和游标分页的角色市场数据")
+    @GetMapping("/market")
+    public ResponseEntity<ApiResponse<CursorPageResponse<CharacterCardResponse>>> getMarketCharacterCards(
+            @RequestParam(defaultValue = "public") String filter,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+
+        UUID currentUserId = userPrincipal != null ? userPrincipal.getId() : null;
+        CharacterCardMarketFilter marketFilter = CharacterCardMarketFilter.fromString(filter);
+        CursorPageResponse<CharacterCardResponse> response = characterCardService.getMarketCards(
+                marketFilter,
+                keyword,
+                cursor,
+                size,
+                currentUserId
+        );
+        return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     /**

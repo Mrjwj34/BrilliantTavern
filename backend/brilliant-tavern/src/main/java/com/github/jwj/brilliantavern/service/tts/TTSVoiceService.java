@@ -1,5 +1,7 @@
 package com.github.jwj.brilliantavern.service.tts;
 
+import com.github.jwj.brilliantavern.dto.CursorPageResponse;
+import com.github.jwj.brilliantavern.dto.VoiceMarketFilter;
 import com.github.jwj.brilliantavern.entity.TTSVoice;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -97,5 +99,14 @@ public interface TTSVoiceService {
      * @return 更新后的语音对象
      */
     Mono<TTSVoice> unlikeVoice(String voiceId, String userId);
+
+    /**
+     * 游标分页获取音色市场列表
+     */
+    Mono<CursorPageResponse<TTSVoice>> getVoiceMarket(VoiceMarketFilter filter,
+                                                      String keyword,
+                                                      String cursor,
+                                                      int size,
+                                                      String userId);
 
 }
