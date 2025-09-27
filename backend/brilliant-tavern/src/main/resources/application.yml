@@ -87,10 +87,10 @@ app:
     timeout: 30s
     # 音频配置
     audio:
-      format: wav
+      format: mp3
       chunk-length: 200
       normalize: true
-      streaming: true
+      streaming: false
       max-new-tokens: 1024
       top-p: 0.8
       repetition-penalty: 1.1

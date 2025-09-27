@@ -45,7 +45,7 @@ public class FishSpeechTTSService implements TTSService {
     @Value("${app.tts.timeout:30s}")
     private Duration timeout;
     
-    @Value("${app.tts.audio.format:wav}")
+    @Value("${app.tts.audio.format:mp3}")
     private String audioFormat;
     
     @Value("${app.tts.audio.chunk-length:200}")

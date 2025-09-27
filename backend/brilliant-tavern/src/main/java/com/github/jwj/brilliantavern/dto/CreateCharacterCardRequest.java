@@ -39,6 +39,7 @@ public class CreateCharacterCardRequest {
     @Builder.Default
     private Boolean isPublic = false;
 
+    //TODO: 这里前端传错id了
     @Schema(description = "TTS音色ID", example = "zh-CN-XiaoxiaoNeural")
     @Size(max = 100, message = "TTS音色ID不能超过100个字符")
     private String ttsVoiceId;
