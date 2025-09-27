@@ -7,9 +7,11 @@ import com.github.jwj.brilliantavern.dto.CreateCharacterCardRequest;
 import com.github.jwj.brilliantavern.dto.LikeResponse;
 import com.github.jwj.brilliantavern.dto.UpdateCharacterCardRequest;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
+import com.github.jwj.brilliantavern.entity.TTSVoice;
 import com.github.jwj.brilliantavern.entity.UserLike;
 import com.github.jwj.brilliantavern.exception.BusinessException;
 import com.github.jwj.brilliantavern.repository.CharacterCardRepository;
+import com.github.jwj.brilliantavern.repository.TTSVoiceRepository;
 import com.github.jwj.brilliantavern.repository.UserLikeRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -43,6 +45,7 @@ public class CharacterCardService {
 
     private final CharacterCardRepository characterCardRepository;
     private final UserLikeRepository userLikeRepository;
+    private final TTSVoiceRepository ttsVoiceRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -54,13 +57,19 @@ public class CharacterCardService {
     public CharacterCardResponse createCharacterCard(UUID creatorId, CreateCharacterCardRequest request) {
         log.info("创建角色卡: 用户={}, 角色名称={}", creatorId, request.getName());
 
+        // 如果提供了ttsVoiceId,将其转换为reference_id
+        String ttsReferenceId = null;
+        if (request.getTtsVoiceId() != null) {
+            ttsReferenceId = convertVoiceIdToReferenceId(request.getTtsVoiceId());
+        }
+
         CharacterCard card = CharacterCard.builder()
                 .creatorId(creatorId)
                 .name(request.getName())
                 .shortDescription(request.getShortDescription())
                 .greetingMessage(request.getGreetingMessage())
                 .isPublic(request.getIsPublic())
-                .ttsVoiceId(request.getTtsVoiceId())
+                .ttsVoiceId(ttsReferenceId)
                 .avatarUrl(request.getAvatarUrl())
                 .cardData(request.toCardData())
                 .build();
@@ -100,7 +109,8 @@ public class CharacterCardService {
             card.setIsPublic(request.getIsPublic());
         }
         if (request.getTtsVoiceId() != null) {
-            card.setTtsVoiceId(request.getTtsVoiceId());
+            String ttsReferenceId = convertVoiceIdToReferenceId(request.getTtsVoiceId());
+            card.setTtsVoiceId(ttsReferenceId);
         }
         if (request.getAvatarUrl() != null) {
             card.setAvatarUrl(request.getAvatarUrl());
@@ -646,5 +656,23 @@ public class CharacterCardService {
     public Page<CharacterCardResponse> getUserLikedCards(UUID userId, Pageable pageable) {
         Page<CharacterCard> cards = characterCardRepository.findLikedCardsByUser(userId, pageable);
         return cards.map(card -> CharacterCardResponse.fromEntity(card, true)); // 都是点赞的
+    }
+
+    /**
+     * 将TTS voice数据库ID转换为reference_id
+     */
+    private String convertVoiceIdToReferenceId(String voiceIdStr) {
+        if (voiceIdStr == null || voiceIdStr.trim().isEmpty()) {
+            return null;
+        }
+        
+        try {
+            Long voiceId = Long.parseLong(voiceIdStr.trim());
+            return ttsVoiceRepository.findById(voiceId)
+                    .map(TTSVoice::getReferenceId)
+                    .orElseThrow(() -> new BusinessException("TTS音色不存在: " + voiceId));
+        } catch (NumberFormatException e) {
+            throw new BusinessException("TTS音色ID格式错误: " + voiceIdStr);
+        }
     }
 }

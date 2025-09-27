@@ -67,15 +67,16 @@ public class MethodExecutionHandler implements EventHandler {
 
     private Flux<VoiceStreamEvent> handleMethodClosed(TagEvent tagEvent, String contextKey) {
         MethodContext context = methodContexts.remove(contextKey);
-        if (context == null || context.contentBuffer.length() == 0) {
-            log.warn("方法标签结束但没有内容: sessionId={}, messageId={}", 
+        if (context == null) {
+            log.warn("方法标签结束但没有上下文: sessionId={}, messageId={}", 
                     tagEvent.getSessionId(), tagEvent.getMessageId());
             return Flux.empty();
         }
         
         String methodCall = context.contentBuffer.toString().trim();
+        
         if (!StringUtils.hasText(methodCall)) {
-            log.warn("方法调用内容为空: sessionId={}, messageId={}", 
+            log.debug("方法标签为空，无需执行方法: sessionId={}, messageId={}", 
                     tagEvent.getSessionId(), tagEvent.getMessageId());
             return Flux.empty();
         }

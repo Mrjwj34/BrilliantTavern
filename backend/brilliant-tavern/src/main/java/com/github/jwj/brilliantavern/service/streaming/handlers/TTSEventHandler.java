@@ -32,17 +32,12 @@ public class TTSEventHandler implements EventHandler {
     @Override
     public Flux<VoiceStreamEvent> handleEvent(TagEvent tagEvent, StreamingVoiceOrchestrator.SessionState sessionState) {
         String contextKey = sessionState.getSessionId() + "_" + sessionState.getMessageId();
-        
-        switch (tagEvent.getEventType()) {
-            case TAG_OPENED:
-                return handleTTSOpened(tagEvent, contextKey);
-            case CONTENT_CHUNK:
-                return handleTTSContent(tagEvent, contextKey);
-            case TAG_CLOSED:
-                return handleTTSClosed(tagEvent, contextKey, sessionState);
-            default:
-                return Flux.empty();
-        }
+
+        return switch (tagEvent.getEventType()) {
+            case TAG_OPENED -> handleTTSOpened(tagEvent, contextKey);
+            case CONTENT_CHUNK -> handleTTSContent(tagEvent, contextKey);
+            case TAG_CLOSED -> handleTTSClosed(tagEvent, contextKey, sessionState);
+        };
     }
 
     private Flux<VoiceStreamEvent> handleTTSOpened(TagEvent tagEvent, String contextKey) {
