@@ -250,6 +250,7 @@ public class VoiceConversationOrchestrator {
         return Mono.fromRunnable(() -> {
             if (StringUtils.hasText(processed.userTranscription())) {
                 voiceChatService.saveChatHistory(
+                        sessionInfo.getHistoryId(),
                         sessionId,
                         sessionInfo.getUser().getId(),
                         sessionInfo.getCharacterCardId(),
@@ -258,6 +259,7 @@ public class VoiceConversationOrchestrator {
                 );
             }
             voiceChatService.saveChatHistory(
+                    sessionInfo.getHistoryId(),
                     sessionId,
                     sessionInfo.getUser().getId(),
                     sessionInfo.getCharacterCardId(),

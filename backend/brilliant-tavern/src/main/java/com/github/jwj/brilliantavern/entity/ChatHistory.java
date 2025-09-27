@@ -18,7 +18,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "chat_history", indexes = {
     @Index(name = "idx_chat_history_session_id", columnList = "session_id"),
-    @Index(name = "idx_chat_history_user_card", columnList = "user_id,card_id")
+    @Index(name = "idx_chat_history_user_card", columnList = "user_id,card_id"),
+    @Index(name = "idx_chat_history_history_id", columnList = "history_id"),
+    @Index(name = "idx_chat_history_user_history", columnList = "user_id,history_id")
 })
 @Data
 @Builder
@@ -31,7 +33,13 @@ public class ChatHistory {
     private Long id;
 
     /**
-     * 会话ID - 标识一次完整的对话会话
+     * 历史记录ID - 标识一个完整的历史记录，用户在历史列表中看到的每一项
+     */
+    @Column(name = "history_id", nullable = false)
+    private UUID historyId;
+
+    /**
+     * 会话ID - 标识一次技术会话连接，用于WebSocket通信管理
      */
     @Column(name = "session_id", nullable = false)
     private UUID sessionId;

@@ -127,7 +127,8 @@ import {
   watch,
   nextTick,
   onMounted,
-  onBeforeUnmount
+  onBeforeUnmount,
+  inject
 } from 'vue'
 import { characterCardAPI, voiceChatAPI } from '@/api'
 import { format, notification } from '@/utils'
@@ -135,11 +136,16 @@ import { format, notification } from '@/utils'
 export default {
   name: 'RoundVoiceChat',
   setup() {
+    // 注入来自Dashboard的会话数据
+    const selectedSession = inject('selectedSession', null)
+    
+    // 角色卡相关
     const searchKeyword = ref('')
     const characterList = ref([])
     const loadingCharacters = ref(false)
     const selectedCharacter = ref(null)
 
+    // 会话相关
     const session = ref(null)
     const sessionClosing = ref(false)
     const stompClient = ref(null)
@@ -252,12 +258,86 @@ export default {
       }
     }
 
+    // 根据会话ID加载历史记录
+    const loadSessionHistory = async (sessionId) => {
+      historyLoading.value = true
+      cleanupMessageAudios()
+      userMessages.clear()
+      assistantMessages.clear()
+      segmentBuffers.clear()
+      try {
+        const response = await voiceChatAPI.getSessionHistory(sessionId)
+        if (response?.code === 200) {
+          const history = Array.isArray(response.data) ? response.data : []
+          const mapped = history
+            .map(item => ({
+              id: `${item.id || `${sessionId}-${item.timestamp}`}`,
+              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
+              text: item.content,
+              timestamp: parseTimestamp(item.timestamp),
+              audioSegments: []
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp)
+          messages.value = mapped
+        } else {
+          messages.value = []
+        }
+      } catch (error) {
+        console.error('加载会话历史失败', error)
+        messages.value = []
+      } finally {
+        historyLoading.value = false
+        await nextTick(() => {
+          if (chatListRef.value) {
+            chatListRef.value.scrollTop = chatListRef.value.scrollHeight
+          }
+        })
+      }
+    }
+
+    // 根据角色卡ID加载完整对话历史（跨所有会话）
+    const loadCompleteHistory = async (cardId) => {
+      historyLoading.value = true
+      cleanupMessageAudios()
+      userMessages.clear()
+      assistantMessages.clear()
+      segmentBuffers.clear()
+      try {
+        const response = await voiceChatAPI.getCompleteHistory(cardId)
+        if (response?.code === 200) {
+          const history = Array.isArray(response.data) ? response.data : []
+          const mapped = history
+            .map(item => ({
+              id: `${item.id || `complete-${item.timestamp}`}`,
+              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
+              text: item.content,
+              timestamp: parseTimestamp(item.timestamp),
+              audioSegments: []
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp)
+          messages.value = mapped
+        } else {
+          messages.value = []
+        }
+      } catch (error) {
+        console.error('加载完整对话历史失败', error)
+        messages.value = []
+      } finally {
+        historyLoading.value = false
+        await nextTick(() => {
+          if (chatListRef.value) {
+            chatListRef.value.scrollTop = chatListRef.value.scrollHeight
+          }
+        })
+      }
+    }
+
     const selectCharacter = async (card) => {
       if (selectedCharacter.value && selectedCharacter.value.id === card.id) {
         return
       }
       selectedCharacter.value = card
-      await startSession()
+      await startNewSession() // 创建新会话
     }
 
     const createMessageId = () => {
@@ -267,20 +347,22 @@ export default {
       return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
     }
 
-    const startSession = async () => {
+    const startNewSession = async () => {
       if (!selectedCharacter.value) return
       await endSession()
       try {
         const payload = {
           characterCardId: selectedCharacter.value.id,
-          loadHistory: true,
-          historyLimit: 20
+          loadHistory: false, // 不加载历史记录
+          createNew: true // 创建新会话
         }
         const response = await voiceChatAPI.createSession(payload)
         if (response?.code === 200) {
           session.value = response.data
-          await loadHistory(selectedCharacter.value.id)
-          if (!messages.value.length && session.value?.greetingMessage && session.value.greetingMessage.trim()) {
+          messages.value = [] // 清空消息列表
+          
+          // 添加欢迎消息
+          if (session.value?.greetingMessage && session.value.greetingMessage.trim()) {
             messages.value.push({
               id: `${session.value.sessionId}-greeting`,
               role: 'assistant',
@@ -291,11 +373,103 @@ export default {
           }
           await connectStomp()
         } else {
-          notification.error(response?.message || '会话创建失败')
+          notification.error('创建会话失败: ' + (response?.message || '未知错误'))
         }
       } catch (error) {
-        console.error('创建会话失败', error)
-        notification.error(error.message || '会话创建失败，请稍后再试')
+        console.error('创建会话异常：', error)
+        notification.error('创建会话失败，请稍后再试')
+      }
+    }
+
+    const startSession = async () => {
+      return startNewSession()
+    }
+
+    // 加载历史会话
+    const startSessionWithHistory = async (sessionData) => {
+      if (!sessionData || !sessionData.sessionId) return
+      
+      // 首先需要获取角色信息
+      if (sessionData.cardId) {
+        try {
+          // 从角色列表中找到对应的角色，如果没有则获取
+          let character = characterList.value.find(c => c.id === sessionData.cardId)
+          if (!character) {
+            // 如果角色列表中没有，先获取角色列表
+            await fetchCharacters()
+            character = characterList.value.find(c => c.id === sessionData.cardId)
+          }
+          
+          if (character) {
+            selectedCharacter.value = character
+          }
+        } catch (error) {
+          console.error('获取角色信息失败:', error)
+        }
+      }
+
+      await endSession()
+      try {
+        // 创建或恢复会话
+        const payload = {
+          characterCardId: sessionData.cardId,
+          sessionId: sessionData.sessionId,
+          loadHistory: true, // 加载历史记录
+          createNew: false
+        }
+        const response = await voiceChatAPI.createSession(payload)
+        if (response?.code === 200) {
+          session.value = response.data
+          // 根据情况加载历史：如果sessionData中有historyId则使用historyId加载，否则使用sessionId
+          if (sessionData.historyId) {
+            await loadHistoryById(sessionData.historyId)
+          } else {
+            await loadSessionHistory(sessionData.sessionId)
+          }
+          await connectStomp()
+        } else {
+          notification.error('恢复会话失败: ' + (response?.message || '未知错误'))
+        }
+      } catch (error) {
+        console.error('恢复会话异常：', error)
+        notification.error('恢复会话失败，请稍后再试')
+      }
+    }
+
+    // 根据历史记录ID加载历史
+    const loadHistoryById = async (historyId) => {
+      historyLoading.value = true
+      cleanupMessageAudios()
+      userMessages.clear()
+      assistantMessages.clear()
+      segmentBuffers.clear()
+      try {
+        const response = await voiceChatAPI.getHistoryById(historyId)
+        if (response?.code === 200) {
+          const history = Array.isArray(response.data) ? response.data : []
+          const mapped = history
+            .map(item => ({
+              id: `${item.id || `history-${item.timestamp}`}`,
+              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
+              text: item.content,
+              timestamp: parseTimestamp(item.timestamp),
+              audioSegments: []
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp)
+          messages.value = mapped
+        } else {
+          messages.value = []
+        }
+      } catch (error) {
+        console.error('加载历史记录失败', error)
+        messages.value = []
+      } finally {
+        historyLoading.value = false
+        await nextTick(() => {
+          if (chatListRef.value) {
+            chatListRef.value.scrollTop = chatListRef.value.scrollHeight
+          }
+        })
       }
     }
 
@@ -1075,6 +1249,18 @@ export default {
 
     watch(messages, () => nextTick(scrollToBottom))
 
+    // 监听来自Dashboard的会话选择
+    if (selectedSession && selectedSession.sessionData) {
+      watch(selectedSession.sessionData, async (newSessionData) => {
+        if (newSessionData && newSessionData.loadHistory && newSessionData.sessionId) {
+          console.log('收到历史会话加载请求:', newSessionData)
+          await startSessionWithHistory(newSessionData)
+          // 清除标记，避免重复加载
+          newSessionData.loadHistory = false
+        }
+      }, { immediate: true })
+    }
+
     onMounted(() => {
       fetchCharacters(true)
     })
@@ -1091,26 +1277,33 @@ export default {
     })
 
     return {
+      // 角色卡相关
       searchKeyword,
       characterList,
       filteredCharacters,
       loadingCharacters,
       selectedCharacter,
       selectCharacter,
+      fetchCharacters,
+
+      // 会话相关
       session,
       sessionClosing,
       stompConnected,
       messages,
       historyLoading,
-      formatTime,
-      fetchCharacters,
+      
+      // 录音和播放
       isRecording,
       recordElapsed,
       isProcessing,
       canRecord,
       toggleRecording,
-      chatListRef,
       playSegment,
+      
+      // 其他
+      formatTime,
+      chatListRef,
       endSession
     }
   }
@@ -1125,6 +1318,168 @@ export default {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+}
+
+.history-panel {
+  width: 280px;
+  background: var(--background-secondary);
+  border-right: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 1rem;
+  transition: width 0.3s ease;
+
+  &.collapsed {
+    width: 60px;
+    padding: 1rem 0.5rem;
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+
+    h3 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text-primary);
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .toggle-btn,
+    .refresh-btn {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      background: var(--background-tertiary);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.2s ease;
+
+      &:hover {
+        background: var(--background-hover);
+        color: var(--text-primary);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .session-filter {
+    select {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      background: var(--background-tertiary);
+      color: var(--text-primary);
+      font-size: 0.9rem;
+    }
+  }
+
+  .session-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    &.loading {
+      opacity: 0.7;
+    }
+
+    .loading-hint,
+    .empty-hint {
+      text-align: center;
+      color: var(--text-secondary);
+      padding: 2rem 1rem;
+      font-size: 0.9rem;
+    }
+  }
+
+  .session-item {
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: var(--background-tertiary);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: var(--background-hover);
+      border-color: var(--border-light);
+    }
+
+    &.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+
+    .session-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.5rem;
+
+      h4 {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .character-name {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        margin-left: 0.5rem;
+        flex-shrink: 0;
+      }
+    }
+
+    .session-preview {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.8rem;
+      opacity: 0.8;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .session-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      opacity: 0.7;
+
+      .message-count {
+        flex-shrink: 0;
+      }
+
+      .last-time {
+        font-size: 0.7rem;
+        opacity: 0.6;
+      }
+    }
+  }
 }
 
 .character-panel {

@@ -112,7 +112,6 @@
     <!-- 角色详情弹窗 -->
     <transition name="modal">
       <div v-if="showDetailModal" class="character-detail-modal">
-        <div class="modal-backdrop" @click="closeDetailModal"></div>
         <div class="modal-content-wrapper" @click.stop>
           <div class="modal-header">
             <h2>{{ editMode ? '编辑角色' : '角色详情' }}</h2>
@@ -419,6 +418,47 @@
         </div>
       </div>
     </transition>
+
+    <!-- 删除角色卡确认对话框 -->
+    <Teleport to="body">
+      <transition name="confirm-fade" appear>
+        <div v-if="deleteConfirm.visible" class="confirm-modal">
+          <div class="modal-backdrop" @click="!deleteConfirm.loading && closeDeleteConfirm()"></div>
+          <div class="modal-dialog compact" @click.stop>
+            <div class="modal-header">
+              <h4>删除角色卡</h4>
+              <button class="close-btn" type="button" @click="closeDeleteConfirm" :disabled="deleteConfirm.loading">
+                <span>&times;</span>
+              </button>
+            </div>
+            <div class="modal-content">
+              <p class="confirm-message">
+                确定要删除角色卡"<strong>{{ deleteConfirm.card?.name }}</strong>"吗？
+                <br>
+                <span class="warning-text">该操作无法恢复，相关的对话记录也将被删除。</span>
+              </p>
+            </div>
+            <div class="modal-actions">
+              <button
+                type="button"
+                class="btn secondary"
+                @click="closeDeleteConfirm"
+                :disabled="deleteConfirm.loading"
+              >取消</button>
+              <button
+                type="button"
+                class="btn danger"
+                @click="confirmDeleteCard"
+                :disabled="deleteConfirm.loading"
+              >
+                <span v-if="deleteConfirm.loading" class="loading-indicator"></span>
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
 
@@ -426,6 +466,7 @@
 import { ref, reactive, computed, onMounted, nextTick, onUnmounted, watch } from 'vue'
 import { characterCardAPI, uploadAPI, ttsAPI } from '@/api'
 import { debounce, storage } from '@/utils'
+import { notification } from '@/utils/notification'
 import CharacterCard from './CharacterCard.vue'
 import VoiceSelector from './VoiceSelector.vue'
 
@@ -457,6 +498,13 @@ export default {
     const avatarFileInput = ref(null) // 文件输入引用
     const uploadedAvatarMode = ref('') // 'uploaded' | 'url' | ''
     const availableVoices = ref([]) // 音色列表    // 显示的头像URL - 编辑模式下的逻辑
+
+    // 删除确认对话框
+    const deleteConfirm = reactive({
+      visible: false,
+      card: null,
+      loading: false
+    })
     const displayedEditAvatarUrl = computed({
       get() {
         // 编辑模式下URL输入框始终为空，不显示原有URL（安全考虑）
@@ -744,6 +792,9 @@ export default {
       showDetailModal.value = true
       // 初始化编辑表单数据，实现自动回显
       initEditForm(card)
+      
+      // 通知父组件角色被选中
+      emit('character-selected', card)
     }
 
     // 关闭详情弹窗
@@ -751,6 +802,9 @@ export default {
       showDetailModal.value = false
       selectedCard.value = null
       editMode.value = false
+      
+      // 通知父组件角色被取消选择
+      emit('character-deselected')
     }
 
     // 初始化编辑表单数据
@@ -932,13 +986,46 @@ export default {
       }
     }
 
-    // 处理删除
+    // 打开删除确认对话框
     const handleDelete = async (card) => {
+      deleteConfirm.card = card
+      deleteConfirm.visible = true
+      deleteConfirm.loading = false
+    }
+
+    // 关闭删除确认对话框
+    const closeDeleteConfirm = () => {
+      if (deleteConfirm.loading) return
+      deleteConfirm.visible = false
+      deleteConfirm.card = null
+    }
+
+    // 确认删除角色卡
+    const confirmDeleteCard = async () => {
+      if (deleteConfirm.loading || !deleteConfirm.card) {
+        return
+      }
+
       try {
-        await characterCardAPI.delete(card.id)
-        cards.value = cards.value.filter(c => c.id !== card.id)
+        deleteConfirm.loading = true
+        
+        // 调用删除API
+        const response = await characterCardAPI.delete(deleteConfirm.card.id)
+        
+        if (response?.code === 200 || response?.status === 200 || !response?.code) {
+          // 从列表中移除该角色卡
+          cards.value = cards.value.filter(c => c.id !== deleteConfirm.card.id)
+          
+          notification.success('角色卡删除成功')
+        } else {
+          notification.error('删除失败: ' + (response?.message || '未知错误'))
+        }
       } catch (error) {
-        console.error('删除失败:', error)
+        console.error('删除角色卡失败:', error)
+        notification.error('删除失败，请稍后再试')
+      } finally {
+        deleteConfirm.loading = false
+        closeDeleteConfirm()
       }
     }
 
@@ -1088,6 +1175,9 @@ export default {
       handleCardDetail,
       handleLike,
       handleDelete,
+      closeDeleteConfirm,
+      confirmDeleteCard,
+      deleteConfirm,
       handleCreateNew,
       scrollToTop,
       closeDetailModal,
@@ -1476,16 +1566,7 @@ export default {
   }
 }
 
-// 过渡动画
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+/* 已合并到下方的统一 fade 动画 */
 
 // 移动端回顶按钮
 @media (max-width: 768px) {
@@ -1534,15 +1615,7 @@ export default {
   padding: 2rem;
 }
 
-.modal-backdrop {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 1;
-}
+/* .modal-backdrop 已删除，解决层级遮挡问题 */
 
 .modal-content-wrapper {
   background: var(--background-primary);
@@ -2060,5 +2133,167 @@ export default {
     width: 60px;
     height: 60px;
   }
+}
+
+/* 删除确认对话框样式 */
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.5); /* 半透明黑色背景 */
+}
+
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.modal-dialog {
+  position: relative;
+  background: #ffffff; /* 纯白色背景 */
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  max-width: 90vw;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+
+  &.compact {
+    width: 400px;
+    max-width: 90vw;
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+
+  h4 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #111827; /* 深灰色文本 */
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.modal-content {
+  padding: 20px 24px;
+
+  .confirm-message {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #374151; /* 灰色文本 */
+    line-height: 1.5;
+
+    .warning-text {
+      color: #dc2626; /* 红色警告文本 */
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+  }
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 16px 24px 20px;
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    min-width: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &.secondary {
+      background: var(--surface-color);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+
+      &:hover:not(:disabled) {
+        background: var(--surface-hover);
+        border-color: var(--border-hover);
+      }
+    }
+
+    &.danger {
+      background: var(--error-color);
+      color: white;
+
+      &:hover:not(:disabled) {
+        background: #dc2626;
+      }
+
+      .loading-indicator {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+    }
+  }
+}
+
+/* 删除确认弹窗的动画 */
+.confirm-fade-enter-active, .confirm-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.confirm-fade-enter-from, .confirm-fade-leave-to {
+  opacity: 0;
 }
 </style>

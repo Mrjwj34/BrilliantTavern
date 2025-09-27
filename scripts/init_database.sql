@@ -132,6 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_tts_voice_likes_created_at ON tts_voice_likes(cre
 -- =====================================
 CREATE TABLE IF NOT EXISTS chat_history (
     id BIGSERIAL PRIMARY KEY,
+    history_id UUID NOT NULL,
     session_id UUID NOT NULL,
     user_id UUID NOT NULL,
     card_id UUID NOT NULL,
@@ -143,11 +144,13 @@ CREATE TABLE IF NOT EXISTS chat_history (
 );
 
 -- 对话历史表索引
+CREATE INDEX IF NOT EXISTS idx_chat_history_history_id ON chat_history(history_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_session_id ON chat_history(session_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_user_id ON chat_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_card_id ON chat_history(card_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_timestamp ON chat_history(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_chat_history_session_timestamp ON chat_history(session_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_chat_history_user_history ON chat_history(user_id, history_id);
+CREATE INDEX IF NOT EXISTS idx_chat_history_history_timestamp ON chat_history(history_id, timestamp);
 
 -- =====================================
 -- 触发器函数：自动更新 updated_at 字段

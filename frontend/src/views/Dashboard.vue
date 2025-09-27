@@ -74,12 +74,60 @@
             <polyline points="12,7 12,12 16,14"/>
           </svg>
           <h3 class="history-title">历史记录</h3>
+          <button @click="refreshHistory" class="history-refresh-btn" :disabled="loadingHistory" title="刷新历史记录">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ spinning: loadingHistory }">
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+              <path d="M21 21v-5h-5"/>
+            </svg>
+          </button>
         </div>
-        <div class="history-placeholder">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="history-placeholder-icon">
-            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
-          </svg>
-          <p class="history-placeholder-text">暂无历史记录</p>
+        <div class="history-content">
+          <div v-if="loadingHistory" class="history-loading">
+            <div class="loading-spinner"></div>
+            <span>加载中...</span>
+          </div>
+          <div v-else-if="filteredChatSessions.length === 0" class="history-placeholder">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="history-placeholder-icon">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            </svg>
+            <p class="history-placeholder-text">
+              {{ selectedCharacterInMarket ? '暂无与此角色的对话记录' : '暂无历史记录' }}
+            </p>
+          </div>
+          <div v-else class="history-list">
+            <div
+              v-for="session in filteredChatSessions"
+              :key="session.sessionId"
+              :class="['history-item', { active: currentSessionId === session.sessionId }]"
+              @click="selectHistorySession(session)"
+            >
+              <div class="history-item-header">
+                <h4 class="history-item-title">{{ session.title }}</h4>
+                <div class="history-item-actions">
+                  <span class="history-item-character">{{ session.cardName }}</span>
+                  <button 
+                    class="delete-history-btn"
+                    @click.stop="deleteHistorySession(session)"
+                    :title="'删除对话记录'"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3,6 5,6 21,6"></polyline>
+                      <path d="M19,6V20a2,2,0,0,1-2,2H7a2,2,0,0,1-2-2V6M8,6V4a2,2,0,0,1,2-2h4a2,2,0,0,1,2,2V6"></path>
+                      <line x1="10" y1="11" x2="10" y2="17"></line>
+                      <line x1="14" y1="11" x2="14" y2="17"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <p class="history-item-preview">{{ session.firstMessage || '新对话' }}</p>
+              <div class="history-item-meta">
+                <span class="history-item-count">{{ session.messageCount }} 条</span>
+                <span class="history-item-time">{{ formatHistoryTime(session.lastTime) }}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -103,6 +151,47 @@
         </div>
       </div>
     </aside>
+
+    <!-- 删除历史记录确认对话框 -->
+    <Teleport to="body">
+      <transition name="confirm-fade" appear>
+        <div v-if="deleteConfirm.visible" class="confirm-modal">
+          <div class="modal-backdrop" @click="!deleteConfirm.loading && closeDeleteConfirm()"></div>
+          <div class="modal-dialog compact" @click.stop>
+            <div class="modal-header">
+              <h4>删除对话记录</h4>
+              <button class="close-btn" type="button" @click="closeDeleteConfirm" :disabled="deleteConfirm.loading">
+                <span>&times;</span>
+              </button>
+            </div>
+            <div class="modal-content">
+              <p class="confirm-message">
+                确定要删除与"<strong>{{ deleteConfirm.session?.cardName }}</strong>"的对话记录吗？
+                <br>
+                <span class="warning-text">该操作无法恢复。</span>
+              </p>
+            </div>
+            <div class="modal-actions">
+              <button
+                type="button"
+                class="btn secondary"
+                @click="closeDeleteConfirm"
+                :disabled="deleteConfirm.loading"
+              >取消</button>
+              <button
+                type="button"
+                class="btn danger"
+                @click="confirmDeleteHistory"
+                :disabled="deleteConfirm.loading"
+              >
+                <span v-if="deleteConfirm.loading" class="loading-indicator"></span>
+                确认删除
+              </button>
+            </div>
+          </div>
+        </div>
+      </transition>
+    </Teleport>
 
     <!-- 右侧工作区 -->
     <main class="workspace">
@@ -176,7 +265,11 @@
 
           <!-- 角色市场页面 -->
           <div v-else-if="activeTab === 'market'" key="market" class="market-view">
-            <CharacterMarket @create-new="handleCreateNew" />
+            <CharacterMarket 
+              @create-new="handleCreateNew" 
+              @character-selected="handleCharacterSelected"
+              @character-deselected="handleCharacterDeselected"
+            />
           </div>
 
           <!-- 创建角色页面 -->
@@ -194,10 +287,11 @@
   </div>
 </template>
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, provide } from 'vue'
 import { useRouter } from 'vue-router'
-import { authAPI } from '@/api'
-import { storage, tokenUtils } from '@/utils'
+import { authAPI, voiceChatAPI } from '@/api'
+import { storage, tokenUtils, format } from '@/utils'
+import { notification } from '@/utils/notification'
 import CharacterMarket from '@/components/CharacterMarket.vue'
 import CharacterCreator from '@/components/CharacterCreator.vue'
 import VoiceChat from '@/views/VoiceChat.vue'
@@ -216,6 +310,26 @@ export default {
     const sidebarCollapsed = ref(false)
     const isDarkMode = ref(false)
     const isFirstLoad = ref(true) // 标记首次加载
+    
+    // 历史对话相关
+    const chatSessions = ref([])
+    const loadingHistory = ref(false)
+    const currentSessionId = ref(null)
+    const selectedCharacterInMarket = ref(null) // 当前在市场中选中的角色
+    const selectedSessionData = ref(null) // 当前选中的会话详细数据
+
+    // 删除确认对话框
+    const deleteConfirm = reactive({
+      visible: false,
+      session: null,
+      loading: false
+    })
+
+    // 提供给子组件的会话数据
+    provide('selectedSession', {
+      sessionId: currentSessionId,
+      sessionData: selectedSessionData
+    })
 
     const navTabs = [
       { id: 'market', label: '角色市场' },
@@ -223,11 +337,147 @@ export default {
       { id: 'voice', label: '语音对话' }
     ]
 
+    // 根据当前选中角色筛选历史对话
+    const filteredChatSessions = computed(() => {
+      if (!selectedCharacterInMarket.value) {
+        // 没有选中角色时显示所有对话
+        return chatSessions.value
+      } else {
+        // 选中角色时只显示与该角色的对话
+        return chatSessions.value.filter(session => session.cardId === selectedCharacterInMarket.value.id)
+      }
+    })
+
+    // 获取历史对话列表
+    const fetchChatSessions = async () => {
+      loadingHistory.value = true
+      try {
+        const response = await voiceChatAPI.getUserSessions({ limit: 20 })
+        if (response?.code === 200) {
+          chatSessions.value = Array.isArray(response.data) ? response.data : []
+        } else {
+          chatSessions.value = []
+          console.error('获取历史对话失败:', response?.message)
+        }
+      } catch (error) {
+        console.error('获取历史对话异常:', error)
+        chatSessions.value = []
+      } finally {
+        loadingHistory.value = false
+      }
+    }
+
+    // 刷新历史记录
+    const refreshHistory = () => {
+      fetchChatSessions()
+    }
+
+    // 选择历史对话会话
+    const selectHistorySession = (session) => {
+      if (currentSessionId.value === session.sessionId) {
+        return
+      }
+      
+      // 设置当前会话ID和数据
+      currentSessionId.value = session.sessionId
+      selectedSessionData.value = {
+        historyId: session.sessionId, // 在新设计中，这实际上是historyId
+        sessionId: session.sessionId,
+        cardId: session.cardId,
+        cardName: session.cardName,
+        title: session.title,
+        loadHistory: true // 标记需要加载历史记录
+      }
+      
+      // 切换到语音对话标签
+      setActiveTab('voice')
+    }
+
+    // 打开删除确认对话框
+    const deleteHistorySession = (session) => {
+      deleteConfirm.session = session
+      deleteConfirm.visible = true
+      deleteConfirm.loading = false
+    }
+
+    // 关闭删除确认对话框
+    const closeDeleteConfirm = () => {
+      if (deleteConfirm.loading) return
+      deleteConfirm.visible = false
+      deleteConfirm.session = null
+    }
+
+    // 确认删除历史记录
+    const confirmDeleteHistory = async () => {
+      if (deleteConfirm.loading || !deleteConfirm.session) {
+        return
+      }
+
+      try {
+        deleteConfirm.loading = true
+        
+        // 调用删除API
+        const response = await voiceChatAPI.deleteHistory(deleteConfirm.session.sessionId)
+        
+        if (response?.code === 200) {
+          // 从列表中移除该会话
+          chatSessions.value = chatSessions.value.filter(s => s.sessionId !== deleteConfirm.session.sessionId)
+          
+          // 如果删除的是当前选中的会话，清除选中状态
+          if (currentSessionId.value === deleteConfirm.session.sessionId) {
+            currentSessionId.value = null
+            selectedSessionData.value = null
+            // 如果在语音标签页，切换到欢迎页
+            if (activeTab.value === 'voice') {
+              setActiveTab('welcome')
+            }
+          }
+          
+          notification.success('对话记录删除成功')
+        } else {
+          notification.error('删除失败: ' + (response?.message || '未知错误'))
+        }
+      } catch (error) {
+        console.error('删除历史记录失败:', error)
+        notification.error('删除失败，请稍后再试')
+      } finally {
+        deleteConfirm.loading = false
+        closeDeleteConfirm()
+      }
+    }
+
+    // 格式化历史时间
+    const formatHistoryTime = (timestamp) => {
+      if (!timestamp) return ''
+      return format.date(timestamp, 'MM-DD HH:mm')
+    }
+
+    // 监听角色市场中的角色选择事件
+    const handleCharacterSelected = (character) => {
+      selectedCharacterInMarket.value = character
+      // 清除当前选中的历史会话
+      currentSessionId.value = null
+      selectedSessionData.value = null
+    }
+
+    // 监听角色市场中的角色取消选择事件
+    const handleCharacterDeselected = () => {
+      selectedCharacterInMarket.value = null
+      // 清除当前选中的历史会话
+      currentSessionId.value = null
+      selectedSessionData.value = null
+    }
+
     const setActiveTab = (tabId) => {
       activeTab.value = tabId
       // 切换标签页后，标记不再是首次加载
       if (isFirstLoad.value) {
         isFirstLoad.value = false
+      }
+      // 如果不是切换到语音对话标签，清除会话数据
+      if (tabId !== 'voice') {
+        currentSessionId.value = null
+        selectedSessionData.value = null
       }
     }
 
@@ -302,6 +552,7 @@ export default {
     onMounted(() => {
       loadUserInfo()
       initTheme()
+      fetchChatSessions() // 加载历史对话
     })
 
     return {
@@ -311,13 +562,35 @@ export default {
       sidebarCollapsed,
       isDarkMode,
       isFirstLoad,
+      
+      // 历史对话相关
+      chatSessions,
+      loadingHistory,
+      currentSessionId,
+      selectedCharacterInMarket,
+      selectedSessionData,
+      filteredChatSessions,
+      
+      // 方法
       setActiveTab,
       toggleSidebar,
       toggleTheme,
       handleLogout,
       handleCharacterCreated,
       handleCreateNew,
-      goToWelcome
+      goToWelcome,
+      
+      // 历史对话方法
+      fetchChatSessions,
+      refreshHistory,
+      selectHistorySession,
+      deleteHistorySession,
+      closeDeleteConfirm,
+      confirmDeleteHistory,
+      deleteConfirm,
+      formatHistoryTime,
+      handleCharacterSelected,
+      handleCharacterDeselected
     }
   }
 }
@@ -544,6 +817,8 @@ export default {
   padding: $spacing;
   overflow-y: auto;
   border-top: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .history-header {
@@ -551,6 +826,7 @@ export default {
   display: flex;
   align-items: center;
   gap: $spacing-xs;
+  flex-shrink: 0;
 }
 
 .history-icon {
@@ -565,6 +841,63 @@ export default {
   color: var(--text-primary);
   margin: 0;
   transition: opacity 0.3s ease;
+  flex: 1;
+}
+
+.history-refresh-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: $border-radius-sm;
+  transition: all $transition-fast ease;
+  
+  &:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--background-hover);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  svg.spinning {
+    animation: spin 1s linear infinite;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.history-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.history-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  gap: $spacing-xs;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 
 .history-placeholder {
@@ -587,6 +920,139 @@ export default {
   color: var(--text-tertiary);
   margin: 0;
   transition: opacity 0.3s ease;
+  text-align: center;
+}
+
+.history-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.history-item {
+  padding: 0.75rem;
+  background: var(--background-tertiary);
+  border: 1px solid transparent;
+  border-radius: $border-radius;
+  cursor: pointer;
+  transition: all $transition-fast ease;
+  
+  &:hover {
+    background: var(--background-hover);
+    border-color: var(--border-light);
+  }
+  
+  &.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.history-item-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-character {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.delete-history-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+  
+  &:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+  
+  svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+  }
+}
+
+.history-item:hover .delete-history-btn {
+  opacity: 1;
+}
+
+.history-item.active .delete-history-btn {
+  color: rgba(255, 255, 255, 0.8);
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+}
+
+.history-item-preview {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.history-item-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.history-item-count {
+  flex-shrink: 0;
+}
+
+.history-item-time {
+  font-size: 0.7rem;
+  opacity: 0.6;
 }
 
 // 用户信息
@@ -1038,5 +1504,167 @@ export default {
   &:nth-child(1) { animation-delay: 0.05s; }
   &:nth-child(2) { animation-delay: 0.1s; }
   &:nth-child(3) { animation-delay: 0.15s; }
+}
+
+/* 删除确认对话框样式 */
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  background: rgba(0, 0, 0, 0.5); /* 半透明黑色背景 */
+}
+
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.modal-dialog {
+  position: relative;
+  background: #ffffff; /* 纯白色背景 */
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+  max-width: 90vw;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+
+  &.compact {
+    width: 400px;
+    max-width: 90vw;
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+
+  h4 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #111827; /* 深灰色文本 */
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.modal-content {
+  padding: 20px 24px;
+
+  .confirm-message {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #374151; /* 灰色文本 */
+    line-height: 1.5;
+
+    .warning-text {
+      color: #dc2626; /* 红色警告文本 */
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+  }
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 16px 24px 20px;
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+    min-width: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &.secondary {
+      background: var(--surface-color);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+
+      &:hover:not(:disabled) {
+        background: var(--surface-hover);
+        border-color: var(--border-hover);
+      }
+    }
+
+    &.danger {
+      background: var(--error-color);
+      color: white;
+
+      &:hover:not(:disabled) {
+        background: #dc2626;
+      }
+
+      .loading-indicator {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+    }
+  }
+}
+
+/* 删除确认弹窗的动画 */
+.confirm-fade-enter-active, .confirm-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.confirm-fade-enter-from, .confirm-fade-leave-to {
+  opacity: 0;
 }
 </style>

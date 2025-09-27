@@ -158,7 +158,6 @@ public class AIService {
         if (config.getMaxOutputTokens() != null) {
             generationConfigBuilder.setMaxOutputTokens(config.getMaxOutputTokens());
         }
-
         return new GenerativeModel.Builder()
                 .setModelName(config.getModel())
                 .setVertexAi(vertexAI)

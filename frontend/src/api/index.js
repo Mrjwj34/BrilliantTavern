@@ -118,6 +118,30 @@ export const voiceChatAPI = {
     return request.get('/voice-chat/history', { params })
   },
 
+  getSessionHistory(sessionId) {
+    return request.get(`/voice-chat/sessions/${sessionId}/history`)
+  },
+
+  getHistoryById(historyId) {
+    return request.get(`/voice-chat/histories/${historyId}`)
+  },
+
+  deleteHistory(historyId) {
+    return request.delete(`/voice-chat/histories/${historyId}`)
+  },
+
+  getCompleteHistory(cardId) {
+    return request.get(`/voice-chat/character/${cardId}/complete-history`)
+  },
+
+  getUserSessions(params = {}) {
+    return request.get('/voice-chat/sessions', { params })
+  },
+
+  getUserCardSessions(cardId, params = {}) {
+    return request.get(`/voice-chat/sessions/character/${cardId}`, { params })
+  },
+
   closeSession(sessionId) {
     return request.post(`/voice-chat/sessions/${sessionId}/close`)
   },

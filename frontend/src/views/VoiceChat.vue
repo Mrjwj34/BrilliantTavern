@@ -179,7 +179,7 @@
 </template>
 
 <script>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, inject, watch } from 'vue'
 import VoiceCloneConfig from '@/components/VoiceCloneConfig.vue'
 import MyVoices from '@/components/MyVoices.vue'
 import BrowseVoices from '@/components/BrowseVoices.vue'
@@ -194,6 +194,9 @@ export default {
     RoundVoiceChat
   },
   setup() {
+    // 注入来自Dashboard的会话数据
+    const selectedSession = inject('selectedSession', null)
+    
     // 当前主视图
     const currentView = ref('welcome')
     // 当前子视图
@@ -275,6 +278,24 @@ export default {
       // 初始化
       console.log('VoiceChat component mounted')
     })
+
+    // 监听来自Dashboard的会话选择
+    if (selectedSession && selectedSession.sessionData) {
+      watch(selectedSession.sessionData, (newSessionData) => {
+        if (newSessionData && newSessionData.loadHistory && newSessionData.sessionId) {
+          console.log('VoiceChat收到历史会话加载请求，切换到轮次对话:', newSessionData)
+          
+          // 切换到语音对话视图
+          currentView.value = 'voice-chat'
+          
+          // 设置激活区域为语音对话
+          activeSections.value = ['voice-chat']
+          
+          // 设置为轮次对话模式
+          currentChatMode.value = 'round'
+        }
+      }, { immediate: true })
+    }
 
     return {
       currentView,
