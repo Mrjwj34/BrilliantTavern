@@ -218,7 +218,7 @@ export default {
           
           // 存储用户信息
           storage.set('token', token)
-          storage.set('user', { userId, username, email })
+          storage.set('user', { id: userId, userId, username, email })
           
           // 跳转到仪表盘
           router.push('/dashboard')

@@ -24,7 +24,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private String[] allowedOrigins;
 
     @Autowired
-    private StompInboundLoggingInterceptor inboundLoggingInterceptor;
+    private WebSocketAuthInterceptor webSocketAuthInterceptor;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -38,16 +38,27 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // 注册WebSocket端点，支持SockJS fallback
-    registry.addEndpoint("/ws/voice-chat")
-        .setAllowedOrigins(allowedOrigins);
+        // 通用WebSocket端点（用于历史更新等通用消息）
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins(allowedOrigins);
 
-    registry.addEndpoint("/ws/voice-chat")
-        .setAllowedOrigins(allowedOrigins)
-        .withSockJS()
-        .setStreamBytesLimit(512 * 1024)
-        .setHttpMessageCacheSize(1000)
-        .setDisconnectDelay(30_000);
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins(allowedOrigins)
+                .withSockJS()
+                .setStreamBytesLimit(512 * 1024)
+                .setHttpMessageCacheSize(1000)
+                .setDisconnectDelay(30_000);
+        
+        // 语音对话专用WebSocket端点，支持SockJS fallback
+        registry.addEndpoint("/ws/voice-chat")
+                .setAllowedOrigins(allowedOrigins);
+
+        registry.addEndpoint("/ws/voice-chat")
+                .setAllowedOrigins(allowedOrigins)
+                .withSockJS()
+                .setStreamBytesLimit(512 * 1024)
+                .setHttpMessageCacheSize(1000)
+                .setDisconnectDelay(30_000);
         
         // 原生WebSocket端点（用于原始音频流传输，支持二进制数据）
         registry.addEndpoint("/ws/voice-stream")
@@ -64,7 +75,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(inboundLoggingInterceptor);
+        registration.interceptors(webSocketAuthInterceptor);
     }
 
     @Bean

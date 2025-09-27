@@ -19,6 +19,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -174,8 +175,14 @@ public class VoiceChatService {
                                  String userMessage, String assistantMessage, String greetingMessage) {
         OffsetDateTime now = OffsetDateTime.now();
         
-        // 检查是否是第一轮对话
-        boolean isFirstRound = chatHistoryRepository.findByHistoryIdOrderByTimestampAsc(historyId).isEmpty();
+        // 检查是否需要生成标题（历史记录为空 或者 已有记录但标题为空）
+        List<ChatHistory> existingHistory = chatHistoryRepository.findByHistoryIdOrderByTimestampAsc(historyId);
+        boolean isFirstRound = existingHistory.isEmpty();
+        boolean needsTitle = isFirstRound || existingHistory.stream().noneMatch(h -> 
+            StringUtils.hasText(h.getTitle()));
+        
+        log.debug("标题生成检查: historyId={}, isFirstRound={}, needsTitle={}", 
+                historyId, isFirstRound, needsTitle);
         
         // 如果是第一轮且有开场白，先保存开场白
         if (isFirstRound && greetingMessage != null && !greetingMessage.trim().isEmpty()) {
@@ -215,11 +222,11 @@ public class VoiceChatService {
                 .build();
         chatHistoryRepository.save(assistantHistory);
         
-        log.info("保存完整对话轮次: historyId={}, sessionId={}, isFirstRound={}", 
-                historyId, sessionId, isFirstRound);
+        log.info("保存完整对话轮次: historyId={}, sessionId={}, isFirstRound={}, needsTitle={}", 
+                historyId, sessionId, isFirstRound, needsTitle);
         
-        // 如果是第一轮对话，异步生成标题
-        if (isFirstRound) {
+        // 如果需要生成标题，异步生成标题
+        if (needsTitle) {
             generateTitleAsync(historyId, sessionId, userId, userMessage, assistantMessage);
         }
     }
@@ -233,10 +240,15 @@ public class VoiceChatService {
             // 构建用于生成标题的提示
             String titlePrompt = String.format(
                     """
-                    请根据以下用户和AI助手的第一轮对话，生成一个简洁的中文标题（不超过20个字符），只返回标题本身，不要其他内容：
+                    请为以下对话生成一个简洁的中文标题，要求：
+                    1. 不超过10个字符
+                    2. 只返回标题，不要引号、解释或其他内容
+                    3. 概括对话主要内容
                     
                     用户：%s
-                    助手：%s""",
+                    助手：%s
+                    
+                    标题：""",
                 userMessage, assistantMessage
             );
             
@@ -247,9 +259,9 @@ public class VoiceChatService {
             
             if (generatedTitle != null && !generatedTitle.trim().isEmpty()) {
                 String title = generatedTitle.trim();
-                // 确保标题不超过20个字符
-                if (title.length() > 20) {
-                    title = title.substring(0, 20) + "...";
+                // 确保标题不超过10个字符
+                if (title.length() > 10) {
+                    title = title.substring(0, 10);
                 }
                 
                 // 更新数据库中的标题
@@ -257,10 +269,10 @@ public class VoiceChatService {
                 
                 log.info("标题生成完成: historyId={}, title={}, updatedRows={}", historyId, title, updatedRows);
                 
-                // 通过WebSocket通知前端标题已生成
+                // 通过WebSocket通知前端标题已生成（发送到语音对话页面）
                 sendTitleUpdateToUser(sessionId, userId, historyId, title);
                 
-                // 同时通知侧边栏更新
+                // 同时通知侧边栏更新（发送到Dashboard）
                 sendHistoryUpdateToUser(userId);
                 
             } else {
@@ -284,15 +296,16 @@ public class VoiceChatService {
                 "timestamp", System.currentTimeMillis()
             );
             
-            // 发送到用户的会话
+            // 发送到用户的语音对话会话
+            String destination = "/topic/voice-chat/" + sessionId.toString();
             messagingTemplate.convertAndSendToUser(
                 userId.toString(),
-                "/topic/voice-chat/" + sessionId.toString(),
+                destination,
                 titleUpdate
             );
             
-            log.debug("发送标题更新通知: userId={}, sessionId={}, historyId={}, title={}", 
-                    userId, sessionId, historyId, title);
+            log.info("发送标题更新通知: userId={}, destination={}, historyId={}, title={}", 
+                    userId, destination, historyId, title);
         } catch (Exception e) {
             log.error("发送标题更新通知失败: userId={}, sessionId={}", userId, sessionId, e);
         }
@@ -301,24 +314,18 @@ public class VoiceChatService {
     /**
      * 通知用户历史记录已更新
      */
+    @Async
     private void sendHistoryUpdateToUser(UUID userId) {
-        try {
-            Map<String, Object> historyUpdate = Map.of(
-                "type", "HISTORY_REFRESH",
-                "timestamp", System.currentTimeMillis()
-            );
-            
-            // 发送到用户的全局频道
-            messagingTemplate.convertAndSendToUser(
-                userId.toString(),
-                "/topic/history-updates",
-                historyUpdate
-            );
-            
-            log.debug("发送历史更新通知: userId={}", userId);
-        } catch (Exception e) {
-            log.error("发送历史更新通知失败: userId={}", userId, e);
-        }
+        Map<String, Object> historyUpdate = Map.of(
+            "type", "HISTORY_REFRESH",
+            "timestamp", System.currentTimeMillis()
+        );
+        
+        messagingTemplate.convertAndSendToUser(
+            userId.toString(),
+            "/topic/history-updates",
+            historyUpdate
+        );
     }
 
     /**

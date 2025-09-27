@@ -92,9 +92,9 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     long countByUserAndCard(@Param("userId") UUID userId, @Param("cardId") UUID cardId);
 
     /**
-     * 更新历史记录标题
+     * 更新历史记录标题（更新该historyId下所有记录）
      */
     @Modifying
-    @Query("UPDATE ChatHistory ch SET ch.title = :title WHERE ch.historyId = :historyId AND ch.role = 'ASSISTANT' AND ch.title IS NULL")
+    @Query("UPDATE ChatHistory ch SET ch.title = :title WHERE ch.historyId = :historyId AND (ch.title IS NULL OR ch.title = '')")
     int updateHistoryTitle(@Param("historyId") UUID historyId, @Param("title") String title);
 }

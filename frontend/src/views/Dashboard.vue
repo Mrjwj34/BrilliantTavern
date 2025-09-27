@@ -512,17 +512,16 @@ export default {
         const localUser = storage.get('user')
         if (localUser) {
           user.value = localUser
-          console.log('已加载本地用户信息:', localUser.username)
+          return true
         } else {
-          console.error('本地用户信息缺失，清除认证信息')
           tokenUtils.clearAuth()
           router.push('/login')
+          return false
         }
       } catch (error) {
-        console.error('加载用户信息失败:', error)
-        console.error('本地用户信息缺失，清除认证信息')
         tokenUtils.clearAuth()
         router.push('/login')
+        return false
       }
     }
 
@@ -540,7 +539,6 @@ export default {
     }
 
     const handleCharacterCreated = (character) => {
-      console.log('角色创建成功:', character)
       // 创建成功后切换到角色市场
       setActiveTab('market')
       // TODO: 显示成功提示
@@ -557,13 +555,11 @@ export default {
     // WebSocket相关方法
     const connectWebSocket = () => {
       if (!user.value?.id) {
-        console.warn('用户信息不完整，无法建立WebSocket连接')
         return
       }
 
       const token = tokenUtils.getToken()
       if (!token) {
-        console.warn('没有有效token，无法建立WebSocket连接')
         return
       }
 
@@ -573,34 +569,26 @@ export default {
           connectHeaders: {
             'Authorization': `Bearer ${token}`
           },
-          debug: function (str) {
-            console.log('STOMP Debug:', str)
-          },
+          heartbeatIncoming: 4000,
+          heartbeatOutgoing: 4000,
           onConnect: (frame) => {
-            console.log('历史更新WebSocket连接成功:', frame)
             isStompConnected.value = true
             
             // 订阅历史更新通知
-            client.subscribe(`/user/${user.value.id}/topic/history-updates`, (message) => {
+            const subscription = client.subscribe(`/user/topic/history-updates`, (message) => {
               try {
                 const data = JSON.parse(message.body)
-                console.log('收到历史更新通知:', data)
-                
                 if (data.type === 'HISTORY_REFRESH') {
-                  // 刷新历史记录列表
                   fetchChatSessions()
                 }
               } catch (error) {
-                console.error('处理历史更新消息失败:', error)
               }
             })
           },
           onDisconnect: () => {
-            console.log('历史更新WebSocket连接断开')
             isStompConnected.value = false
           },
           onStompError: (frame) => {
-            console.error('历史更新WebSocket错误:', frame)
             isStompConnected.value = false
           }
         })
@@ -608,7 +596,6 @@ export default {
         client.activate()
         stompClient.value = client
       } catch (error) {
-        console.error('建立历史更新WebSocket连接失败:', error)
       }
     }
 
@@ -617,15 +604,20 @@ export default {
         stompClient.value.deactivate()
         stompClient.value = null
         isStompConnected.value = false
-        console.log('历史更新WebSocket连接已断开')
       }
     }
 
-    onMounted(() => {
-      loadUserInfo()
+    onMounted(async () => {
+      const userLoaded = await loadUserInfo() // 确保用户信息加载完成
       initTheme()
-      fetchChatSessions() // 加载历史对话
-      connectWebSocket() // 建立WebSocket连接用于实时更新
+      
+      if (userLoaded) {
+        await fetchChatSessions() // 加载历史对话
+        // 延迟建立WebSocket连接，确保用户信息已加载
+        setTimeout(() => {
+          connectWebSocket() // 建立WebSocket连接用于实时更新
+        }, 1000)
+      }
     })
 
     onUnmounted(() => {

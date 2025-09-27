@@ -334,14 +334,18 @@ public class AIService {
      */
     public String generateSimpleText(String prompt) {
         try {
+            log.debug("生成简单文本请求: prompt长度={}", prompt.length());
+            
             Part textPart = Part.fromText(prompt);
             List<Content> contents = List.of(Content.fromParts(textPart));
 
             GenerateContentConfig config = GenerateContentConfig.builder()
                     .temperature(0.7f)
-                    .maxOutputTokens(50)
+                    .maxOutputTokens(200) // 进一步增加token限制，确保能生成完整标题
                     .build();
 
+            log.debug("调用Vertex AI生成内容: model={}", genAIConfig.getVertexAi().getModel());
+            
             GenerateContentResponse response = genAIClient.models.generateContent(
                 genAIConfig.getVertexAi().getModel(),
                 contents,
@@ -349,17 +353,22 @@ public class AIService {
             );
 
             if (response != null) {
+                log.debug("收到AI响应: response={}", response);
                 String text = response.text();
+                log.debug("解析的文本内容: text={}", text);
+                
                 if (StringUtils.hasText(text)) {
-                    return text.trim();
+                    String result = text.trim();
+                    log.info("AI文本生成成功: result={}", result);
+                    return result;
                 }
             }
 
-            log.warn("AI响应为空或格式异常");
+            log.warn("AI响应为空或格式异常: response={}", response);
             return null;
 
         } catch (Exception e) {
-            log.error("生成简单文本失败", e);
+            log.error("生成简单文本失败: prompt={}", prompt, e);
             return null;
         }
     }
