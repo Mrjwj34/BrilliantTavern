@@ -1,5 +1,7 @@
 package com.github.jwj.brilliantavern.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.github.jwj.brilliantavern.entity.converter.ChatHistoryRoleConverter;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -50,7 +52,7 @@ public class ChatHistory {
      * 角色 ('user' 或 'assistant')
      */
     @Column(name = "role", nullable = false, length = 20)
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = ChatHistoryRoleConverter.class)
     private Role role;
 
     /**
@@ -75,9 +77,11 @@ public class ChatHistory {
     // 关联实体
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    @JsonIgnore
     private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "card_id", insertable = false, updatable = false)
+    @JsonIgnore
     private CharacterCard characterCard;
 }

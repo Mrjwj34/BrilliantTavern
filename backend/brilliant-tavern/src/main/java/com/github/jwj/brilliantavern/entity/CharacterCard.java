@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -34,6 +35,7 @@ public class CharacterCard {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_id", insertable = false, updatable = false)
+    @JsonIgnore
     private User creator;
 
     @Column(name = "name", nullable = false, length = 100)

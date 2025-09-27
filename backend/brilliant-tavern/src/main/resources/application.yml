@@ -30,6 +30,10 @@ spring:
     date-format: yyyy-MM-dd HH:mm:ss
     serialization:
       write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
   
   # 文件上传配置
   servlet:
@@ -53,22 +57,15 @@ spring:
           min-idle: 0
       timeout: 3000ms
 
-  # Spring AI配置
-  ai:
-    model:
-      chat: vertexai  # 启用Vertex AI Chat模型
-    vertex:
-      ai:
-        gemini:
-          project-id: ${VERTEX_AI_PROJECT_ID}
-          location: ${VERTEX_AI_LOCATION:us-central1}
-          credentials-uri: ${VERTEX_AI_CREDENTIALS_URI}
-          chat:
-            options:
-              model: gemini-2.5-flash
-              temperature: 0.7
-              max-output-tokens: 2048
-              candidate-count: 1
+  # Google Cloud Vertex AI配置
+  google:
+    cloud:
+      project-id: ${VERTEX_AI_PROJECT_ID}
+      vertex-ai:
+        location: ${VERTEX_AI_LOCATION:us-central1}
+        model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
+        temperature: 0.7
+        max-output-tokens: 2048
 
 
 
@@ -83,18 +80,21 @@ jwt:
 app:
   # TTS服务配置
   tts:
-    base-url: http://ry2.9gpu.com:27046  # TTS服务基础URL
+    base-url: ${TTS_SERVICE_URL}  # TTS服务基础URL
     timeout: 30s
     # 音频配置
     audio:
       format: wav
       chunk-length: 200
       normalize: true
-      streaming: false
+      streaming: true
       max-new-tokens: 1024
       top-p: 0.8
       repetition-penalty: 1.1
       temperature: 0.8
+  sample-rate: 44100
+  channels: 1
+  bits-per-sample: 16
   
   # 文件上传配置
   upload:

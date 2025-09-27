@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +48,12 @@ public class VoiceChatController {
                 .email(userPrincipal.getEmail())
                 .build();
         
-        VoiceChatSessionResponse session = voiceChatService.createSession(request, user);
+    VoiceChatSessionResponse session = voiceChatService.createSession(request, user);
+    String websocketEndpoint = ServletUriComponentsBuilder
+        .fromCurrentContextPath()
+        .path("/ws/voice-chat")
+        .toUriString();
+    session.setWebsocketEndpoint(websocketEndpoint);
         
         return ResponseEntity.ok(ApiResponse.success("创建语音聊天会话成功", session));
     }

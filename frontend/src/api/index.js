@@ -110,17 +110,12 @@ export const voiceAPI = {
 
 // 语音聊天相关API
 export const voiceChatAPI = {
-  createSession(data) {
-    return request.post('/voice-chat/sessions', data)
+  createSession(payload) {
+    return request.post('/voice-chat/sessions', payload)
   },
 
-  fetchHistory(characterCardId, limit = 20) {
-    return request.get('/voice-chat/history', {
-      params: {
-        characterCardId,
-        limit
-      }
-    })
+  getHistory(params) {
+    return request.get('/voice-chat/history', { params })
   },
 
   closeSession(sessionId) {

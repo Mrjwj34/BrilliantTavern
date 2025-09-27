@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.jwj.brilliantavern.dto.voice.VoiceChatSessionRequest;
 import com.github.jwj.brilliantavern.dto.voice.VoiceChatSessionResponse;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
@@ -31,6 +32,7 @@ public class VoiceChatService {
     private final ChatHistoryRepository chatHistoryRepository;
     private final CharacterCardRepository characterCardRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
     
     // Redis键前缀
     private static final String SESSION_KEY_PREFIX = "voice_chat_session:";
@@ -63,18 +65,16 @@ public class VoiceChatService {
                 .greetingMessage(characterCard.getGreetingMessage())
                 .ttsVoiceId(characterCard.getTtsVoiceId())
                 .createdAt(OffsetDateTime.now())
-        .websocketEndpoint("/ws/voice-chat")
-        .subscriptionDestination("/topic/voice/" + sessionId)
-        .publishDestination("/app/voice/" + sessionId)
+                .websocketEndpoint("/ws/voice-chat")
                 .build();
         
         // 将会话信息存储到Redis
         String sessionKey = SESSION_KEY_PREFIX + sessionId.toString();
-        SessionInfo sessionInfo = SessionInfo.builder()
+    SessionInfo sessionInfo = SessionInfo.builder()
                 .sessionId(sessionId)
                 .userId(user.getId())
                 .characterCardId(characterCard.getId())
-                .characterCard(characterCard)
+        .characterCard(cloneCharacterCard(characterCard))
                 .user(user)
                 .createdAt(OffsetDateTime.now())
                 .isActive(true)
@@ -96,7 +96,7 @@ public class VoiceChatService {
      */
     public SessionInfo getSession(UUID sessionId) {
         String sessionKey = SESSION_KEY_PREFIX + sessionId.toString();
-        SessionInfo sessionInfo = (SessionInfo) redisTemplate.opsForValue().get(sessionKey);
+        SessionInfo sessionInfo = mapToSessionInfo(redisTemplate.opsForValue().get(sessionKey));
         
         if (sessionInfo == null) {
             throw new BusinessException("会话不存在或已过期");
@@ -137,7 +137,7 @@ public class VoiceChatService {
      */
     public void closeSession(UUID sessionId, UUID userId) {
         String sessionKey = SESSION_KEY_PREFIX + sessionId.toString();
-        SessionInfo sessionInfo = (SessionInfo) redisTemplate.opsForValue().get(sessionKey);
+        SessionInfo sessionInfo = mapToSessionInfo(redisTemplate.opsForValue().get(sessionKey));
         
         if (sessionInfo != null) {
             sessionInfo.setIsActive(false);
@@ -166,6 +166,41 @@ public class VoiceChatService {
     public void extendSession(UUID sessionId) {
         String sessionKey = SESSION_KEY_PREFIX + sessionId.toString();
         redisTemplate.expire(sessionKey, SESSION_EXPIRE_HOURS, TimeUnit.HOURS);
+    }
+
+    private SessionInfo mapToSessionInfo(Object cacheValue) {
+        if (cacheValue == null) {
+            return null;
+        }
+        if (cacheValue instanceof SessionInfo sessionInfo) {
+            return sessionInfo;
+        }
+        try {
+            return objectMapper.convertValue(cacheValue, SessionInfo.class);
+        } catch (IllegalArgumentException ex) {
+            log.error("会话信息反序列化失败, 类型={}", cacheValue.getClass(), ex);
+            throw new BusinessException("会话数据已失效，请重新创建会话");
+        }
+    }
+
+    private CharacterCard cloneCharacterCard(CharacterCard original) {
+        if (original == null) {
+            return null;
+        }
+        return CharacterCard.builder()
+                .id(original.getId())
+                .creatorId(original.getCreatorId())
+                .name(original.getName())
+                .shortDescription(original.getShortDescription())
+                .greetingMessage(original.getGreetingMessage())
+                .isPublic(original.getIsPublic())
+                .likesCount(original.getLikesCount())
+                .ttsVoiceId(original.getTtsVoiceId())
+                .avatarUrl(original.getAvatarUrl())
+                .cardData(original.getCardData())
+                .createdAt(original.getCreatedAt())
+                .updatedAt(original.getUpdatedAt())
+                .build();
     }
 
     /**

@@ -1,48 +1,46 @@
 package com.github.jwj.brilliantavern.service;
 
-import com.github.jwj.brilliantavern.entity.CharacterCard;
+import com.github.jwj.brilliantavern.config.VertexAIConfig;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
+import com.github.jwj.brilliantavern.entity.CharacterCard;
+import com.github.jwj.brilliantavern.service.util.AsrMarkupProcessor;
+import com.google.cloud.vertexai.VertexAI;
+import com.google.cloud.vertexai.api.Content;
+import com.google.cloud.vertexai.api.GenerateContentResponse;
+import com.google.cloud.vertexai.api.GenerationConfig;
+import com.google.cloud.vertexai.api.Part;
+import com.google.cloud.vertexai.generativeai.GenerativeModel;
+import com.google.cloud.vertexai.generativeai.ResponseHandler;
+import com.google.cloud.vertexai.generativeai.ResponseStream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MimeType;
-import org.springframework.util.MimeTypeUtils;
+import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * AI服务类，负责与Spring AI集成处理语音对话
- * 使用ChatMemory管理对话历史，支持音频转写功能
+ * AI服务类，负责与Google Vertex AI集成处理语音对话
+ * 使用ChatMemoryService管理对话历史，支持音频转写功能
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AIService {
 
-    private final ChatModel chatModel;
-    private final ChatMemory chatMemory;
+    private final VertexAI vertexAI;
+    private final VertexAIConfig vertexAIConfig;
+    private final ChatMemoryService chatMemoryService;
     
     @Value("classpath:prompts/character-chat-template.st")
     private Resource promptTemplate;
-    
-    // ASR转写结果的正则表达式
-    private static final Pattern ASR_PATTERN = Pattern.compile("\\[ASR_TRANSCRIPTION](.*?)\\[/ASR_TRANSCRIPTION]");
 
     /**
      * 处理语音消息并返回包含分段的AI流式事件。
@@ -53,30 +51,24 @@ public class AIService {
                                                        String messageId) {
         return Flux.defer(() -> {
             try {
+                if (voiceMessage.getAudioData() == null || voiceMessage.getAudioData().length == 0) {
+                    String msg = "接收到空的音频数据，无法生成AI回复";
+                    log.warn("{} - conversationId={}, messageId={}", msg, conversationId, messageId);
+                    return Flux.error(new IllegalArgumentException(msg));
+                }
+
                 String systemPrompt = buildSystemPrompt(characterCard);
-                List<org.springframework.ai.chat.messages.Message> historyMessages = chatMemory.get(conversationId);
+                chatMemoryService.limitHistory(conversationId, 40);
+                List<Content> historyMessages = chatMemoryService.getHistory(conversationId);
 
-                ByteArrayResource audioResource = new ByteArrayResource(voiceMessage.getAudioData());
-                MimeType audioMimeType = getAudioMimeType(voiceMessage.getAudioFormat());
+                // 创建生成模型
+                GenerativeModel model = createGenerativeModel(systemPrompt);
 
-                StringBuilder fullResponse = new StringBuilder();
-                ChatClient chatClient = ChatClient.create(chatModel);
+                log.debug("调用AI开始: conversationId={}, messageId={}, historySize={}, audioBytes={}",
+                        conversationId, messageId, historyMessages.size(), voiceMessage.getAudioData().length);
 
-                return chatClient.prompt()
-                        .system(systemPrompt)
-                        .messages(historyMessages)
-                        .user(userSpec -> userSpec.media(audioMimeType, audioResource))
-                        .stream()
-                        .content()
-                        .doOnNext(content -> {
-                            fullResponse.append(content);
-                            log.debug("AI回复片段: {}", content);
-                        })
-                        .map(content -> AIStreamEvent.chunk(messageId, content))
-                        .concatWith(Mono.fromCallable(() -> {
-                            ProcessedAiResponse processed = processCompleteResponse(fullResponse.toString(), conversationId, "音频消息");
-                            return AIStreamEvent.completed(messageId, processed);
-                        }))
+                // 创建聊天会话并发送消息
+                return processWithVertexAI(model, historyMessages, voiceMessage, conversationId, messageId)
                         .doOnError(error -> log.error("AI处理语音消息失败", error));
             } catch (Exception e) {
                 log.error("处理语音消息失败", e);
@@ -84,22 +76,114 @@ public class AIService {
             }
         });
     }
-    
+
+    /**
+     * 使用Vertex AI处理消息
+     */
+    private Flux<AIStreamEvent> processWithVertexAI(GenerativeModel model,
+                                                    List<Content> historyMessages,
+                                                    VoiceMessage voiceMessage,
+                                                    String conversationId,
+                                                    String messageId) {
+        return Flux.<AIStreamEvent>create(sink -> {
+                    List<Content> requestContents = new ArrayList<>();
+                    if (historyMessages != null && !historyMessages.isEmpty()) {
+                        requestContents.addAll(historyMessages);
+                    }
+
+                    Content audioContent = buildAudioContent(voiceMessage);
+                    requestContents.add(audioContent);
+
+                    ResponseStream<GenerateContentResponse> responseStream = null;
+                    StringBuilder fullResponse = new StringBuilder();
+
+                    try {
+                        responseStream = model.generateContentStream(requestContents);
+
+                        for (GenerateContentResponse responseChunk : responseStream) {
+                            String delta = ResponseHandler.getText(responseChunk);
+                            if (StringUtils.hasText(delta)) {
+                                fullResponse.append(delta);
+                                sink.next(AIStreamEvent.chunk(messageId, delta));
+                            }
+                        }
+
+                        ProcessedAiResponse processed = processCompleteResponse(fullResponse.toString(), conversationId, null);
+                        sink.next(AIStreamEvent.completed(messageId, processed));
+                        sink.complete();
+                    } catch (Exception e) {
+                        sink.error(e);
+                    } finally {
+                        // ResponseStream在当前SDK中不支持显式关闭，依赖GC即可
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 构建包含音频的内容
+     */
+    private Content buildAudioContent(VoiceMessage voiceMessage) {
+        String mimeType = getAudioMimeType(voiceMessage.getAudioFormat());
+
+        Part textPart = Part.newBuilder()
+                .setText("请理解并总结用户发送的音频内容，然后以角色身份进行自然对话回复。")
+                .build();
+
+        Part audioPart = Part.newBuilder()
+                .setInlineData(
+                    com.google.cloud.vertexai.api.Blob.newBuilder()
+                            .setMimeType(mimeType)
+                            .setData(com.google.protobuf.ByteString.copyFrom(voiceMessage.getAudioData()))
+                )
+                .build();
+
+        return Content.newBuilder()
+                .setRole("user")
+                .addParts(textPart)
+                .addParts(audioPart)
+                .build();
+    }
+
+    /**
+     * 创建生成模型
+     */
+    private GenerativeModel createGenerativeModel(String systemPrompt) {
+        VertexAIConfig.VertexAIProperties config = vertexAIConfig.getVertexAi();
+
+        GenerationConfig.Builder generationConfigBuilder = GenerationConfig.newBuilder();
+        if (config.getTemperature() != null) {
+            generationConfigBuilder.setTemperature(config.getTemperature().floatValue());
+        }
+        if (config.getMaxOutputTokens() != null) {
+            generationConfigBuilder.setMaxOutputTokens(config.getMaxOutputTokens());
+        }
+
+        return new GenerativeModel.Builder()
+                .setModelName(config.getModel())
+                .setVertexAi(vertexAI)
+                .setGenerationConfig(generationConfigBuilder.build())
+                .setSystemInstruction(Content.newBuilder()
+                        .addParts(Part.newBuilder().setText(systemPrompt))
+                        .build())
+                .build();
+    }
+
     /**
      * 根据音频格式获取对应的MimeType
      */
-    private MimeType getAudioMimeType(String audioFormat) {
+    private String getAudioMimeType(String audioFormat) {
         if (audioFormat == null) {
-            return MimeTypeUtils.APPLICATION_OCTET_STREAM;
+            return "application/octet-stream";
         }
         
         return switch (audioFormat.toLowerCase()) {
-            case "wav" -> MimeType.valueOf("audio/wav");
-            case "mp3" -> MimeType.valueOf("audio/mpeg");
-            case "webm" -> MimeType.valueOf("audio/webm");
-            case "ogg" -> MimeType.valueOf("audio/ogg");
-            case "m4a" -> MimeType.valueOf("audio/m4a");
-            default -> MimeTypeUtils.APPLICATION_OCTET_STREAM;
+            case "wav" -> "audio/wav";
+            case "mp3" -> "audio/mpeg";
+            case "webm" -> "audio/webm";
+            case "ogg" -> "audio/ogg";
+            case "m4a" -> "audio/m4a";
+            default -> "application/octet-stream";
         };
     }
 
@@ -110,15 +194,12 @@ public class AIService {
         try {
             String template = promptTemplate.getContentAsString(StandardCharsets.UTF_8);
             
-            PromptTemplate promptTemplate = new PromptTemplate(template);
-            Map<String, Object> variables = Map.of(
-                "character_name", characterCard.getName(),
-                "character_description", getCharacterDescription(characterCard),
-                "character_personality", getCharacterPersonality(characterCard),
-                "character_style", getCharacterStyle(characterCard)
-            );
-            
-            return promptTemplate.render(variables);
+            // 手动替换占位符
+            return template
+                    .replace("{character_name}", characterCard.getName())
+                    .replace("{character_description}", getCharacterDescription(characterCard))
+                    .replace("{character_personality}", getCharacterPersonality(characterCard))
+                    .replace("{character_style}", getCharacterStyle(characterCard));
             
         } catch (IOException e) {
             log.error("读取提示词模板失败", e);
@@ -163,34 +244,34 @@ public class AIService {
                                                         String conversationId,
                                                         String userTranscriptionFallback) {
         try {
-            // 提取ASR转写内容
-            Matcher matcher = ASR_PATTERN.matcher(completeResponse);
-            String userTranscription = userTranscriptionFallback; // 使用回退值
-            String aiResponse = completeResponse;
-            
-            if (matcher.find()) {
-                userTranscription = matcher.group(1).trim();
-                // 从AI回复中移除ASR标记
-                aiResponse = completeResponse.replaceAll("\\[ASR_TRANSCRIPTION].*?\\[/ASR_TRANSCRIPTION]", "").trim();
-                
+            AsrMarkupProcessor.Result result = AsrMarkupProcessor.process(completeResponse);
+
+            String aiResponse = StringUtils.hasText(result.sanitizedText())
+                    ? result.sanitizedText()
+                    : AsrMarkupProcessor.normalizeWhitespace(completeResponse);
+
+            String userTranscription = StringUtils.hasText(result.transcription())
+                    ? result.transcription()
+                    : AsrMarkupProcessor.normalizeWhitespace(userTranscriptionFallback);
+
+            if (StringUtils.hasText(userTranscription)) {
+                chatMemoryService.addUserMessage(conversationId, userTranscription);
                 log.debug("提取到用户转写内容: {}", userTranscription);
             }
-            
-            // 更新对话历史
-            if (!userTranscription.isEmpty()) {
-                // 添加用户消息（使用转写的文本）
-                chatMemory.add(conversationId, new UserMessage(userTranscription));
+
+            if (StringUtils.hasText(aiResponse)) {
+                chatMemoryService.addAssistantMessage(conversationId, aiResponse);
             }
-            
-            // 添加AI回复（移除ASR标记后的内容）
-            chatMemory.add(conversationId, new AssistantMessage(aiResponse));
-            
+
             log.debug("更新对话历史成功，对话ID: {}", conversationId);
             return new ProcessedAiResponse(aiResponse, userTranscription);
 
         } catch (Exception e) {
             log.error("处理完整回复失败", e);
-            return new ProcessedAiResponse(completeResponse, userTranscriptionFallback);
+            return new ProcessedAiResponse(
+                    AsrMarkupProcessor.normalizeWhitespace(completeResponse),
+                    AsrMarkupProcessor.normalizeWhitespace(userTranscriptionFallback)
+            );
         }
     }
 

@@ -1,7 +1,8 @@
 package com.github.jwj.brilliantavern.service.tts.impl;
 
+import com.github.jwj.brilliantavern.service.tts.TTSConfig;
 import com.github.jwj.brilliantavern.service.tts.TTSService;
-import com.github.jwj.brilliantavern.service.tts.TtsChunk;
+import com.github.jwj.brilliantavern.service.tts.TTSStreamChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,12 +21,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.io.ByteArrayOutputStream;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.io.ByteArrayOutputStream;
 
 /**
  * FishSpeech TTS服务实现
@@ -54,6 +56,15 @@ public class FishSpeechTTSService implements TTSService {
     
     @Value("${app.tts.audio.streaming:false}")
     private Boolean streaming;
+
+    @Value("${app.tts.audio.sample-rate:44100}")
+    private Integer sampleRate;
+
+    @Value("${app.tts.audio.channels:1}")
+    private Integer channels;
+
+    @Value("${app.tts.audio.bits-per-sample:16}")
+    private Integer bitsPerSample;
     
     @Value("${app.tts.audio.max-new-tokens:1024}")
     private Integer maxNewTokens;
@@ -81,24 +92,67 @@ public class FishSpeechTTSService implements TTSService {
     @Override
     public Mono<byte[]> textToSpeech(String text, String voiceId) {
         return streamTextToSpeech(text, voiceId)
-                .filter(chunk -> chunk.getAudioData() != null)
-                .reduce(new ByteArrayOutputStream(), (out, chunk) -> {
-                    try {
-                        out.write(chunk.getAudioData());
+                .filter(chunk -> chunk.getAudioData() != null && chunk.getAudioData().length > 0)
+                .collectList()
+                .map(chunks -> {
+                    try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                        for (TTSStreamChunk chunk : chunks) {
+                            outputStream.write(chunk.getAudioData());
+                        }
+                        byte[] result = outputStream.toByteArray();
+                        log.debug("FishSpeech TTS转换成功，音频大约 {} 字节", result.length);
+                        return result;
                     } catch (Exception e) {
-                        throw new RuntimeException("写入TTS音频数据失败", e);
+                        throw new RuntimeException("聚合TTS音频失败", e);
                     }
-                    return out;
-                })
-                .map(ByteArrayOutputStream::toByteArray)
-                .defaultIfEmpty(new byte[0]);
+                });
     }
 
     @Override
-    public Flux<TtsChunk> streamTextToSpeech(String text, String voiceId) {
-        log.info("FishSpeech TTS流式转换: 文本='{}', 音色='{}'",
-                text.length() > 50 ? text.substring(0, 50) + "..." : text, voiceId);
+    public Flux<TTSStreamChunk> streamTextToSpeech(String text, String voiceId) {
+        String preview = text != null && text.length() > 50 ? text.substring(0, 50) + "..." : text;
+        log.info("FishSpeech TTS流式转换: 文本='{}', 音色='{}'", preview, voiceId);
 
+        TTSConfig.AudioFormat formatEnum = resolveAudioFormat(audioFormat);
+
+        return Flux.defer(() -> {
+            AtomicInteger chunkIndex = new AtomicInteger();
+            AtomicReference<byte[]> pending = new AtomicReference<>();
+
+            Flux<byte[]> audioFlux = invokeFishSpeech(text, voiceId)
+                    .map(buffer -> {
+                        byte[] data = new byte[buffer.readableByteCount()];
+                        buffer.read(data);
+                        DataBufferUtils.release(buffer);
+                        return data;
+                    });
+
+            Flux<byte[]> fluxWithTerminator = audioFlux
+                    .concatWith(Mono.fromSupplier(() -> new byte[0]));
+
+            return fluxWithTerminator
+                    .concatMap(bytes -> {
+                        byte[] previous = pending.getAndSet(bytes);
+                        if (previous == null) {
+                            return Mono.empty();
+                        }
+                        boolean last = bytes.length == 0;
+                        return Mono.just(TTSStreamChunk.builder()
+                                .chunkIndex(chunkIndex.getAndIncrement())
+                                .audioData(previous)
+                                .audioFormat(formatEnum)
+                .sampleRate(sampleRate)
+                .channels(channels)
+                .bitsPerSample(bitsPerSample)
+                                .last(last)
+                                .build());
+                    })
+                    .timeout(timeout)
+                    .doOnError(error -> log.error("FishSpeech TTS流式转换失败", error));
+        });
+    }
+
+    private Flux<DataBuffer> invokeFishSpeech(String text, String voiceId) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("text", text);
         requestBody.put("chunk_length", chunkLength);
@@ -108,15 +162,13 @@ public class FishSpeechTTSService implements TTSService {
         requestBody.put("seed", null);
         requestBody.put("use_memory_cache", "on");
         requestBody.put("normalize", normalize);
-        requestBody.put("streaming", Boolean.TRUE);
+        requestBody.put("streaming", streaming);
         requestBody.put("max_new_tokens", maxNewTokens);
         requestBody.put("top_p", topP);
         requestBody.put("repetition_penalty", repetitionPenalty);
         requestBody.put("temperature", temperature);
 
-        AtomicInteger chunkIndex = new AtomicInteger();
-
-        Flux<TtsChunk> audioFlux = getFishSpeechWebClient()
+        return getFishSpeechWebClient()
                 .post()
                 .uri("/v1/tts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -129,18 +181,19 @@ public class FishSpeechTTSService implements TTSService {
                                 .map(body -> new RuntimeException("TTS服务错误: " + response.statusCode() + " - " + body))
                 )
                 .bodyToFlux(DataBuffer.class)
-                .map(dataBuffer -> {
-                    byte[] bytes = new byte[dataBuffer.readableByteCount()];
-                    dataBuffer.read(bytes);
-                    DataBufferUtils.release(dataBuffer);
-                    return TtsChunk.of(chunkIndex.getAndIncrement(), bytes, false, audioFormat);
-                })
-                .timeout(timeout)
-                .doOnError(error -> log.error("FishSpeech TTS流式转换失败", error));
+                .doOnError(error -> log.error("调用FishSpeech TTS接口失败", error));
+    }
 
-        return audioFlux.concatWith(Mono.fromCallable(() ->
-                TtsChunk.of(chunkIndex.getAndIncrement(), new byte[0], true, audioFormat)
-        ));
+    private TTSConfig.AudioFormat resolveAudioFormat(String format) {
+        if (format == null) {
+            return TTSConfig.AudioFormat.MP3;
+        }
+        try {
+            return TTSConfig.AudioFormat.valueOf(format.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            log.warn("不支持的音频格式: {}，回退为MP3", format);
+            return TTSConfig.AudioFormat.MP3;
+        }
     }
 
     /**

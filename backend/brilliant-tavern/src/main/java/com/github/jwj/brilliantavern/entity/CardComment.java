@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -56,9 +57,11 @@ public class CardComment {
     // 关联实体
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "card_id", insertable = false, updatable = false)
+    @JsonIgnore
     private CharacterCard characterCard;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "author_id", insertable = false, updatable = false)
+    @JsonIgnore
     private User author;
 }

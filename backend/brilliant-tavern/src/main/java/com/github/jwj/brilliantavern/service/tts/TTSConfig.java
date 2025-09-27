@@ -36,7 +36,7 @@ public class TTSConfig {
     /**
      * 采样率
      */
-    private Integer sampleRate = 22050;
+    private Integer sampleRate = 44100;
     
     /**
      * 音频格式枚举

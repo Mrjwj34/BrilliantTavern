@@ -35,9 +35,7 @@ public class VoiceStreamEvent {
         message.put("sessionId", sessionId);
         message.put("messageId", messageId);
         message.put("timestamp", timestamp);
-        if (payload != null) {
-            message.putAll(payload);
-        }
+        message.put("payload", payload != null ? payload : Map.of());
         return message;
     }
 }

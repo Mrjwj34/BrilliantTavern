@@ -51,14 +51,4 @@ public class VoiceChatSessionResponse {
      * WebSocket连接端点
      */
     private String websocketEndpoint;
-
-    /**
-     * STOMP订阅目的地
-     */
-    private String subscriptionDestination;
-
-    /**
-     * 发送语音消息的目的地
-     */
-    private String publishDestination;
 }

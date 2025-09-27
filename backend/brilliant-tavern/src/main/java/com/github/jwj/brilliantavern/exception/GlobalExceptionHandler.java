@@ -4,11 +4,13 @@ import com.github.jwj.brilliantavern.dto.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.fasterxml.jackson.databind.exc.InvalidDefinitionException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -55,6 +57,37 @@ public class GlobalExceptionHandler {
         log.warn("参数校验失败: {}", errors);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(400, "参数校验失败"));
+    }
+
+    /**
+     * 处理JSON序列化异常
+     */
+    @ExceptionHandler(HttpMessageConversionException.class)
+    public ResponseEntity<ApiResponse<Object>> handleHttpMessageConversionException(HttpMessageConversionException e) {
+        log.error("JSON序列化异常: ", e);
+        
+        // 检查是否是Hibernate代理对象序列化问题
+        if (e.getCause() instanceof InvalidDefinitionException) {
+            InvalidDefinitionException ide = (InvalidDefinitionException) e.getCause();
+            if (ide.getMessage().contains("ByteBuddyInterceptor")) {
+                log.error("Hibernate代理对象序列化失败，请检查实体类的JSON序列化配置");
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(ApiResponse.error(500, "数据序列化失败"));
+            }
+        }
+        
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error(500, "数据格式转换失败"));
+    }
+
+    /**
+     * 处理Jackson序列化异常
+     */
+    @ExceptionHandler(InvalidDefinitionException.class)
+    public ResponseEntity<ApiResponse<Object>> handleInvalidDefinitionException(InvalidDefinitionException e) {
+        log.error("Jackson序列化异常: ", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error(500, "数据序列化失败"));
     }
 
     /**
