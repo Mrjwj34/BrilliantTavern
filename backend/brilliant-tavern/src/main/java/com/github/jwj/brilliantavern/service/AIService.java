@@ -79,7 +79,7 @@ public class AIService {
     }
 
     /**
-     * 使用Gen AI处理消息
+     * 使用Gen AI处理消息 - 真流式实现
      */
     private Flux<AIStreamEvent> processWithGenAI(List<Content> historyMessages,
                                                  VoiceMessage voiceMessage,
@@ -101,21 +101,20 @@ public class AIService {
 
                         StringBuilder fullResponse = new StringBuilder();
 
-                        // 使用新SDK的非流式API暂时代替，流式API需要进一步调研
-                        GenerateContentResponse response = genAIClient.models.generateContent(
+                        // 使用真流式API
+                        var responseStream = genAIClient.models.generateContentStream(
                             genAIConfig.getVertexAi().getModel(),
                             requestContents,
                             config
                         );
                         
-                        String responseText = response.text();
-                        if (StringUtils.hasText(responseText)) {
-                            fullResponse.append(responseText);
-                            // 模拟流式响应，分段发送
-                            String[] chunks = responseText.split("(?<=\\.)\\s+");
-                            for (String chunk : chunks) {
-                                if (StringUtils.hasText(chunk.trim())) {
-                                    sink.next(AIStreamEvent.chunk(messageId, chunk + " "));
+                        // 处理流式响应 - 使用try-with-resources确保资源正确关闭
+                        try (responseStream) {
+                            for (GenerateContentResponse response : responseStream) {
+                                String text = response.text();
+                                if (StringUtils.hasText(text)) {
+                                    fullResponse.append(text);
+                                    sink.next(AIStreamEvent.chunk(messageId, text));
                                 }
                             }
                         }

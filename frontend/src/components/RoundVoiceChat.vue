@@ -70,7 +70,7 @@
               <span class="role">{{ message.role === 'user' ? '我' : selectedCharacter.name }}</span>
               <span class="time">{{ formatTime(message.timestamp) }}</span>
             </div>
-            <div class="bubble">
+            <div class="bubble" :class="{ typing: message.isTyping }">
               <p v-if="message.status === 'error'" class="error-text">{{ message.text }}</p>
               <p v-else>{{ message.text }}</p>
               <div v-if="message.audioSegments && message.audioSegments.length" class="audio-segments">
@@ -902,11 +902,17 @@ export default {
           case 'AI_TEXT_SEGMENT':
             handleAssistantSegment(message)
             break
+          case 'SUBTITLE_STREAM':
+            handleSubtitleStream(message)
+            break
           case 'AUDIO_CHUNK':
             handleAudioChunk(message)
             break
           case 'ASR_RESULT':
             handleAsrResult(message)
+            break
+          case 'METHOD_EXECUTION':
+            handleMethodExecution(message)
             break
           case 'ROUND_COMPLETED':
             finalizeAssistant(message)
@@ -955,10 +961,14 @@ export default {
       const segments = assistantMessage.segments || {}
       segments[segmentOrder] = payload.text
       assistantMessage.segments = segments
-      assistantMessage.text = Object.keys(segments)
+      
+      // 使用打字机效果显示新文本
+      const fullText = Object.keys(segments)
         .sort((a, b) => Number(a) - Number(b))
         .map(key => segments[key])
         .join(' ')
+      
+      addTypingEffect(assistantMessage, payload.text)
       assistantMessage.timestamp = Date.now()
       
       if (payload.isFinal) {
@@ -1204,6 +1214,77 @@ export default {
       }
       isProcessing.value = false
       activeMessageId.value = null
+    }
+
+    const handleSubtitleStream = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理字幕流:', { messageId, payload })
+      if (!messageId || !payload) return
+      
+      const assistantMessage = ensureAssistantMessage(messageId)
+      
+      switch (payload.action) {
+        case 'start':
+          assistantMessage.subtitleStreaming = true
+          assistantMessage.subtitleLanguage = payload.language
+          assistantMessage.subtitleBuffer = ''
+          break
+        case 'segment':
+          if (assistantMessage.subtitleStreaming) {
+            // 使用打字机效果逐渐显示字幕内容
+            addTypingEffect(assistantMessage, payload.text || '')
+          }
+          break
+        case 'end':
+          assistantMessage.subtitleStreaming = false
+          if (payload.fullText) {
+            assistantMessage.text = payload.processedText || payload.fullText
+          }
+          break
+      }
+    }
+
+    const handleMethodExecution = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理方法执行:', { messageId, payload })
+      if (!messageId || !payload) return
+      
+      // 显示方法执行结果或错误信息
+      const notification_type = payload.action === 'method_error' ? 'warning' : 'info'
+      const content = payload.result?.message || payload.error || '方法执行完成'
+      
+      if (notification_type === 'warning') {
+        notification.warning(content)
+      } else {
+        notification.info(content)
+      }
+    }
+
+    // 打字机效果实现
+    const addTypingEffect = (message, newText) => {
+      if (!newText) return
+      
+      // 如果已经有打字动画在进行，先清除
+      if (message.typingTimer) {
+        clearInterval(message.typingTimer)
+      }
+      
+      message.isTyping = true
+      message.subtitleBuffer = message.subtitleBuffer || ''
+      const targetText = message.subtitleBuffer + newText
+      let currentIndex = message.subtitleBuffer.length
+      
+      message.typingTimer = setInterval(() => {
+        if (currentIndex < targetText.length) {
+          message.text = targetText.substring(0, currentIndex + 1)
+          currentIndex++
+        } else {
+          clearInterval(message.typingTimer)
+          message.typingTimer = null
+          message.isTyping = false
+          message.subtitleBuffer = targetText
+        }
+      }, 50) // 50ms 间隔，可调整打字速度
     }
 
     const handleError = (message) => {
@@ -1712,6 +1793,19 @@ export default {
       font-size: 0.75rem;
       color: var(--primary-color);
     }
+
+    /* 打字机效果样式 */
+    &.typing {
+      position: relative;
+      
+      &::after {
+        content: '|';
+        color: var(--primary-color);
+        animation: blink 1s infinite;
+        font-weight: bold;
+        margin-left: 2px;
+      }
+    }
   }
 
   &.user .bubble {
@@ -1805,6 +1899,16 @@ export default {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border-light);
+  }
+}
+
+/* 闪烁光标动画 */
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
   }
 }
 </style>

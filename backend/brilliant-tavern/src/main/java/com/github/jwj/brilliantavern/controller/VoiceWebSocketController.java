@@ -2,7 +2,7 @@ package com.github.jwj.brilliantavern.controller;
 
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import com.github.jwj.brilliantavern.dto.voice.VoiceStreamEvent;
-import com.github.jwj.brilliantavern.service.VoiceConversationOrchestrator;
+import com.github.jwj.brilliantavern.service.streaming.StreamingVoiceOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -25,7 +25,7 @@ import java.util.UUID;
 public class VoiceWebSocketController {
     
     private final SimpMessagingTemplate messagingTemplate;
-    private final VoiceConversationOrchestrator voiceConversationOrchestrator;
+    private final StreamingVoiceOrchestrator streamingVoiceOrchestrator;
 
     /**
      * 处理语音消息 - 完整的语音对话流程
@@ -61,10 +61,10 @@ public class VoiceWebSocketController {
                 voiceMessage.setMessageId(UUID.randomUUID().toString());
             }
 
-            VoiceConversationOrchestrator.VoiceMessageWithMetadata payload =
-                    new VoiceConversationOrchestrator.VoiceMessageWithMetadata(voiceMessage, voiceMessage.getMessageId());
+            StreamingVoiceOrchestrator.VoiceMessageWithMetadata payload =
+                    new StreamingVoiceOrchestrator.VoiceMessageWithMetadata(voiceMessage, voiceMessage.getMessageId());
 
-        voiceConversationOrchestrator.processVoiceInput(sessionUuid, payload)
+        streamingVoiceOrchestrator.processVoiceInput(sessionUuid, payload)
             .subscribe(
                 event -> sendEvent(sessionId, event),
                 error -> {

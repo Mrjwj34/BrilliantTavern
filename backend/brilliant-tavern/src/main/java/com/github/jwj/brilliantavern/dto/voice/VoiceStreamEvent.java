@@ -20,6 +20,8 @@ public class VoiceStreamEvent {
         AUDIO_CHUNK,
         ROUND_COMPLETED,
         PROCESSING_COMPLETED,
+        SUBTITLE_STREAM,      // 字幕流式推送
+        METHOD_EXECUTION,     // 方法执行
         ERROR
     }
 

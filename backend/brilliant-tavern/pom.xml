@@ -52,7 +52,7 @@
         <dependency>
             <groupId>com.google.genai</groupId>
             <artifactId>google-genai</artifactId>
-            <version>1.16.0</version>
+            <version>1.18.0</version>
         </dependency>
         
         <!-- Jackson for JSON processing -->
