@@ -144,6 +144,7 @@
           </div>
           
           <div class="modal-content">
+            <!-- 左侧：角色详情 -->
             <div class="character-form">
               <!-- 基础信息 -->
               <div class="form-section">
@@ -414,12 +415,24 @@
                 </div>
               </div>
             </div>
+            
+            <!-- 右侧：评论区 -->
+            <div class="comment-section-panel">
+              <CommentSection
+                v-if="selectedCard"
+                :card-id="selectedCard.id"
+                :card-creator-id="selectedCard.creatorId"
+                @close="closeDetailModal"
+                @comment-count-update="handleCommentCountUpdate"
+              />
+            </div>
           </div>
         </div>
       </div>
     </transition>
 
     <!-- 删除角色卡确认对话框 -->
+
     <Teleport to="body">
       <transition name="confirm-fade" appear>
         <div v-if="deleteConfirm.visible" class="confirm-modal">
@@ -469,12 +482,14 @@ import { debounce, storage } from '@/utils'
 import { notification } from '@/utils/notification'
 import CharacterCard from './CharacterCard.vue'
 import VoiceSelector from './VoiceSelector.vue'
+import CommentSection from './CommentSection.vue'
 
 export default {
   name: 'CharacterMarket',
   components: {
     CharacterCard,
-    VoiceSelector
+    VoiceSelector,
+    CommentSection
   },
   emits: ['create-new'],
   setup(props, { emit }) {
@@ -494,6 +509,7 @@ export default {
     const selectedCard = ref(null)
     const editMode = ref(false)
     const saving = ref(false) // 保存状态
+    
     const uploadingAvatar = ref(false) // 头像上传状态
     const avatarFileInput = ref(null) // 文件输入引用
     const uploadedAvatarMode = ref('') // 'uploaded' | 'url' | ''
@@ -986,6 +1002,18 @@ export default {
       }
     }
 
+
+    // 处理评论数量更新
+    const handleCommentCountUpdate = (newCount) => {
+      if (selectedCard.value) {
+        const cardIndex = cards.value.findIndex(card => card.id === selectedCard.value.id)
+        if (cardIndex > -1) {
+          cards.value[cardIndex].commentsCount = newCount
+        }
+        selectedCard.value.commentsCount = newCount
+      }
+    }
+
     // 打开删除确认对话框
     const handleDelete = async (card) => {
       deleteConfirm.card = card
@@ -1178,6 +1206,8 @@ export default {
       closeDeleteConfirm,
       confirmDeleteCard,
       deleteConfirm,
+      // 评论相关
+      handleCommentCountUpdate,
       handleCreateNew,
       scrollToTop,
       closeDetailModal,
@@ -1582,6 +1612,34 @@ export default {
     }
   }
 }
+
+/* 评论面板样式 */
+.comment-section-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--border-light);
+  
+  @media (max-width: 1024px) {
+    display: none; /* 在小屏幕上隐藏评论面板 */
+  }
+}
+
+/* 模态框过渡动画 */
+.modal-enter-active, .modal-leave-active {
+  transition: all 0.3s ease;
+}
+
+.modal-enter-from, .modal-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.modal-enter-to, .modal-leave-from {
+  opacity: 1;
+  transform: scale(1);
+}
 </style>
 
 <!-- 全局样式覆盖，确保宽度生效 -->
@@ -1622,7 +1680,7 @@ export default {
   border-radius: 16px;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.15);
   width: 100%;
-  max-width: 900px;
+  max-width: 1200px;
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -1762,14 +1820,19 @@ export default {
 
 .modal-content {
   flex: 1;
-  overflow-y: auto;
-  padding: 0 2rem 2rem 2rem;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .character-form {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  padding: 0 2rem 2rem 2rem;
+  overflow-y: auto;
+  min-width: 0;
 }
 
 .form-section {

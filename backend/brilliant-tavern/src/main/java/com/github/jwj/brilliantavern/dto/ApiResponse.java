@@ -19,6 +19,15 @@ public class ApiResponse<T> {
     private T data;
     private long timestamp;
 
+    public static <T> ApiResponse<T> success() {
+        return ApiResponse.<T>builder()
+                .code(200)
+                .message("成功")
+                .data(null)
+                .timestamp(System.currentTimeMillis())
+                .build();
+    }
+
     public static <T> ApiResponse<T> success(T data) {
         return ApiResponse.<T>builder()
                 .code(200)

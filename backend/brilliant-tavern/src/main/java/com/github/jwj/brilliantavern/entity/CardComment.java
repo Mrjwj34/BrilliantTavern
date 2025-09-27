@@ -54,6 +54,32 @@ public class CardComment {
     @Column(name = "updated_at", nullable = false)
     private java.time.OffsetDateTime updatedAt;
 
+    /**
+     * 点赞数
+     */
+    @Column(name = "likes_count", nullable = false)
+    @Builder.Default
+    private Integer likesCount = 0;
+
+    /**
+     * 父评论ID（用于回复功能）
+     */
+    @Column(name = "parent_comment_id")
+    private Long parentCommentId;
+
+    /**
+     * 是否置顶
+     */
+    @Column(name = "is_pinned", nullable = false)
+    @Builder.Default
+    private Boolean isPinned = false;
+
+    /**
+     * 置顶时间
+     */
+    @Column(name = "pinned_at")
+    private java.time.OffsetDateTime pinnedAt;
+
     // 关联实体
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "card_id", insertable = false, updatable = false)
@@ -64,4 +90,9 @@ public class CardComment {
     @JoinColumn(name = "author_id", insertable = false, updatable = false)
     @JsonIgnore
     private User author;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_comment_id", insertable = false, updatable = false)
+    @JsonIgnore
+    private CardComment parentComment;
 }

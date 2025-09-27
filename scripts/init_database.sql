@@ -74,16 +74,41 @@ CREATE TABLE IF NOT EXISTS card_comments (
     card_id UUID NOT NULL,
     author_id UUID NOT NULL,
     content TEXT NOT NULL,
+    likes_count INTEGER NOT NULL DEFAULT 0,
+    parent_comment_id BIGINT,
+    is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    pinned_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE,
-    FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_comment_id) REFERENCES card_comments(id) ON DELETE CASCADE
 );
 
 -- 评论表索引
 CREATE INDEX IF NOT EXISTS idx_card_comments_card_id ON card_comments(card_id);
 CREATE INDEX IF NOT EXISTS idx_card_comments_author_id ON card_comments(author_id);
 CREATE INDEX IF NOT EXISTS idx_card_comments_created_at ON card_comments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_card_comments_likes_count ON card_comments(likes_count DESC);
+CREATE INDEX IF NOT EXISTS idx_card_comments_parent_id ON card_comments(parent_comment_id);
+CREATE INDEX IF NOT EXISTS idx_card_comments_is_pinned ON card_comments(is_pinned, pinned_at DESC);
+CREATE INDEX IF NOT EXISTS idx_card_comments_card_created ON card_comments(card_id, created_at DESC);
+
+-- =====================================
+-- 4.1. 评论点赞关联表 (comment_likes)
+-- =====================================
+CREATE TABLE IF NOT EXISTS comment_likes (
+    user_id UUID NOT NULL,
+    comment_id BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, comment_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (comment_id) REFERENCES card_comments(id) ON DELETE CASCADE
+);
+
+-- 评论点赞表索引
+CREATE INDEX IF NOT EXISTS idx_comment_likes_comment_id ON comment_likes(comment_id);
+CREATE INDEX IF NOT EXISTS idx_comment_likes_created_at ON comment_likes(created_at DESC);
 
 -- =====================================
 -- 5. TTS语音表 (tts_voices)
@@ -221,15 +246,45 @@ CREATE TRIGGER update_tts_voice_likes_count
     FOR EACH ROW EXECUTE FUNCTION update_voice_likes_count();
 
 -- =====================================
--- 8. Spring AI Chat Memory 表 (SPRING_AI_CHAT_MEMORY)
+-- 7.1. 触发器函数：自动更新评论点赞数
 -- =====================================
-CREATE TABLE IF NOT EXISTS SPRING_AI_CHAT_MEMORY (
-    conversation_id VARCHAR(36) NOT NULL,
-    content TEXT NOT NULL,
-    type VARCHAR(10) NOT NULL CHECK (type IN ('USER', 'ASSISTANT', 'SYSTEM', 'TOOL')),
-    "timestamp" TIMESTAMP NOT NULL
-);
+CREATE OR REPLACE FUNCTION update_comment_likes_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE card_comments SET likes_count = likes_count + 1 WHERE id = NEW.comment_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE card_comments SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = OLD.comment_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ language 'plpgsql';
 
-CREATE INDEX IF NOT EXISTS SPRING_AI_CHAT_MEMORY_CONVERSATION_ID_TIMESTAMP_IDX
-    ON SPRING_AI_CHAT_MEMORY(conversation_id, "timestamp");
+-- 为评论点赞表添加触发器
+CREATE TRIGGER update_comment_likes_count_trigger
+    AFTER INSERT OR DELETE ON comment_likes
+    FOR EACH ROW EXECUTE FUNCTION update_comment_likes_count();
+
+-- =====================================
+-- 7.2. 触发器函数：自动设置置顶时间
+-- =====================================
+CREATE OR REPLACE FUNCTION update_pinned_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.is_pinned = TRUE AND OLD.is_pinned = FALSE THEN
+        NEW.pinned_at = CURRENT_TIMESTAMP;
+    ELSIF NEW.is_pinned = FALSE THEN
+        NEW.pinned_at = NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- 为评论表添加置顶时间触发器
+CREATE TRIGGER update_pinned_at_trigger
+    BEFORE UPDATE ON card_comments
+    FOR EACH ROW EXECUTE FUNCTION update_pinned_at();
+
 

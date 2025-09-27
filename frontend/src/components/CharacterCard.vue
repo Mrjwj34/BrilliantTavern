@@ -15,16 +15,27 @@
         </div>
       </div>
       
-      <button
-        @click.stop="handleLike"
-        :class="['like-section', { liked: card && card.isLikedByCurrentUser }]"
-        :title="card && card.isLikedByCurrentUser ? '取消点赞' : '点赞'"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="like-icon">
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-        </svg>
-        <span class="like-count">{{ formatCount((card && typeof card.likesCount === 'number') ? card.likesCount : 0) }}</span>
-      </button>
+      <div class="action-buttons">
+        <button
+          @click.stop="handleLike"
+          :class="['like-section', { liked: card && card.isLikedByCurrentUser }]"
+          :title="card && card.isLikedByCurrentUser ? '取消点赞' : '点赞'"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="like-icon">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+          <span class="like-count">{{ formatCount((card && typeof card.likesCount === 'number') ? card.likesCount : 0) }}</span>
+        </button>
+
+        <!-- 评论数显示（只显示数字，不可点击） -->
+        <div class="comment-count-display" title="评论数">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="comment-icon">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span class="comment-count">{{ formatCount((card && typeof card.commentsCount === 'number') ? card.commentsCount : 0) }}</span>
+        </div>
+
+      </div>
     </div>
 
     <!-- 右侧区域：角色信息 -->
@@ -170,6 +181,7 @@ export default {
       emit('delete', props.card)
     }
 
+
     return {
       isOwnCard,
       formatCount,
@@ -252,6 +264,12 @@ export default {
   }
 }
 
+.action-buttons {
+  display: flex;
+  gap: $spacing-xs;
+  align-items: center;
+}
+
 .like-section {
   display: flex;
   flex-direction: column;
@@ -284,6 +302,27 @@ export default {
   }
 
   .like-count {
+    font-size: 12px;
+    font-weight: 500;
+    min-width: 20px;
+    text-align: center;
+  }
+}
+
+.comment-count-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  padding: $spacing-xs;
+
+  .comment-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .comment-count {
     font-size: 12px;
     font-weight: 500;
     min-width: 20px;

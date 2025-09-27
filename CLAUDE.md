@@ -1,0 +1,165 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## 项目架构
+
+BrilliantTavern 是一个 AI 角色扮演聊天应用，采用前后端分离架构：
+
+### 后端 (Spring Boot)
+- **技术栈**: Spring Boot 3.5.6, Java 17, PostgreSQL, Redis, WebSocket
+- **AI 集成**: Google Vertex AI (Gemini) + Google Gen AI Java SDK v1.18.0
+- **认证**: JWT + Spring Security
+- **语音**: Fish Speech TTS 服务集成
+- **API 文档**: SpringDoc OpenAPI 3 (访问 `/api/swagger-ui.html`)
+- **数据访问**: Spring Data JPA + Hibernate 6
+- **实时通信**: WebSocket + STOMP
+
+### 前端 (Vue.js)
+- **技术栈**: Vue 3, Vue Router 4, Element Plus, Axios
+- **构建工具**: Vue CLI 5
+- **样式**: SCSS + Element Plus UI 组件库
+- **实时通信**: STOMP over WebSocket (@stomp/stompjs + sockjs-client)
+- **开发端口**: 3000 (代理后端 API 到 8080)
+
+## 开发命令
+
+### 后端
+```bash
+# 在 backend/brilliant-tavern 目录下
+mvn spring-boot:run          # 启动开发服务器 (端口 8080)
+mvn clean compile           # 编译项目
+mvn test                    # 运行测试
+mvn clean package          # 构建 JAR 包
+```
+
+### 前端
+```bash
+# 在 frontend 目录下
+npm run serve              # 启动开发服务器 (端口 3000)
+npm run dev                # 同上 (别名)
+npm run build              # 构建生产版本
+npm install                # 安装依赖
+```
+
+### 数据库初始化
+```bash
+# 运行数据库初始化脚本
+psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
+```
+
+## 环境配置
+
+项目需要以下环境变量：
+- `REDIS_HOST`: Redis 服务器地址
+- `REDIS_PASSWORD`: Redis 密码
+- `VERTEX_AI_PROJECT_ID`: Google Cloud 项目 ID
+- `VERTEX_AI_LOCATION`: Vertex AI 区域 (默认 us-central1)
+- `VERTEX_AI_MODEL`: 使用的模型 (默认 gemini-2.5-flash)
+- `GOOGLE_API_KEY`: Google API 密钥 (可选，用于 Gemini Developer API)
+- `TTS_SERVICE_URL`: TTS 服务基础 URL
+
+## 核心功能模块
+
+### 1. 用户认证 (`AuthController`, `AuthService`)
+- JWT 令牌认证
+- 用户注册/登录功能
+
+### 2. 角色卡管理 (`CharacterCardController`, `CharacterCardService`)
+- 角色卡创建、编辑、市场展示
+- 点赞系统和评论功能
+- 游标分页支持
+
+### 3. 语音对话 (`VoiceChatController`, `StreamingVoiceOrchestrator`)
+- 实时语音对话流处理
+- WebSocket 通信和 STOMP 消息传递
+- TTS 音频生成和缓存策略
+- 对话历史管理和会话状态追踪
+- 流式事件处理架构 (事件驱动模式)
+
+### 4. TTS 语音管理 (`TTSVoiceController`, `TTSManagerService`)
+- 语音模型管理
+- Fish Speech TTS 集成
+- 语音缓存策略
+
+### 5. AI 服务 (`AIService`)
+- Google Vertex AI 集成 (Gemini 2.5 Flash)
+- 对话生成和流式处理
+- 思考模式支持 (可配置 think-budget)
+- 反应式编程 (WebFlux/Reactor) 支持
+
+## 数据库架构
+
+**PostgreSQL 数据库** (brilliant_tavern)，使用 UUID 主键和扩展：
+- **PostgreSQL 扩展**: uuid-ossp, pg_trgm (全文搜索)
+- **JPA 配置**: ddl-auto: validate (手动管理数据库结构)
+
+### 主要数据表：
+- `users`: 用户信息 (UUID主键)
+- `character_cards`: 角色卡数据 (JSONB 格式存储)
+- `chat_history`: 对话历史记录
+- `tts_voices`: TTS 语音模型
+- `user_likes`, `tts_voice_likes`: 点赞关联表 (复合主键)
+- `card_comments`: 角色卡评论系统
+- 索引优化: 用户名、邮箱、创建时间等关键字段
+
+## WebSocket 通信
+
+### 后端端点
+- `/ws`: WebSocket 连接端点
+- `/app/voice-chat`: 语音对话消息发送
+- `/topic/voice-chat/{sessionId}`: 订阅语音对话响应
+
+### 前端集成
+- 使用 STOMP 协议
+- `RoundVoiceChat.vue` 组件处理实时对话
+
+## 关键架构模式
+
+### 1. 流式语音处理架构
+- **StreamingVoiceOrchestrator**: 核心流式语音协调器
+- **事件驱动模式**: 使用 Handler 模式处理不同类型事件 (ASR, TTS, Subtitle)
+- **反应式编程**: 使用 Reactor 的 Flux/Mono 处理异步流
+- **会话状态管理**: ConcurrentHashMap 管理多会话状态
+
+### 2. 分层架构设计
+- **Controller Layer**: REST API 控制器 + WebSocket 控制器
+- **Service Layer**: 业务逻辑服务 (AI, Voice, Character 等)
+- **Repository Layer**: Spring Data JPA 数据访问
+- **Entity Layer**: JPA 实体 + 自定义转换器
+
+### 3. 配置管理
+- **分离配置**: application.yml 中使用环境变量占位符
+- **安全配置**: JWT 密钥、数据库密码等敏感信息外部化
+- **模块化配置**: 分离的配置类 (WebSocket, Security, Redis 等)
+
+## 测试和调试
+
+### 测试文件位置
+- **后端测试**: `backend/brilliant-tavern/src/test/java/`
+- **测试类型**: 音频处理、AI 集成、WebSocket 通信测试
+
+### 调试工具
+- **API 测试**: Swagger UI (`/api/swagger-ui.html`)
+- **日志配置**: 详细的包级别日志 (com.github.jwj.brilliantavern: DEBUG)
+- **SQL 调试**: Hibernate SQL 日志开启
+
+### 运行单个测试
+```bash
+# 运行特定测试类
+mvn test -Dtest=AudioContentTest
+
+# 运行特定测试方法
+mvn test -Dtest=AudioContentTest#specificTestMethod
+```
+
+## 开发注意事项
+
+1. **环境配置**: 确保 PostgreSQL、Redis 服务运行，并配置相应环境变量
+2. **AI 配置**: 需要有效的 Google Cloud 项目和 Vertex AI 访问权限
+3. **TTS 服务**: 需要独立部署的 Fish Speech TTS 服务
+4. **CORS 配置**: 前端开发时使用代理访问后端 API (`/api` 代理到 `http://localhost:8080`)
+5. **数据库迁移**: 使用 `ddl-auto: validate` 模式，需要手动管理数据库结构
+6. **文件上传**: 头像等文件存储在 `backend/brilliant-tavern/uploads/` 目录
+7. **WebSocket 调试**: 注意前端 STOMP 连接和后端消息订阅路径匹配
+8. **流式处理**: 语音对话使用流式架构，注意异步处理和错误处理
