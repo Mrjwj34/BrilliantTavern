@@ -1,5 +1,6 @@
 package com.github.jwj.brilliantavern.service.streaming;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -18,14 +19,14 @@ import java.util.regex.Pattern;
 public class StreamingContentParser {
     
     // 标签模式
-    private static final Pattern TSS_OPEN_PATTERN = Pattern.compile("\\[TSS:([a-z]{2})\\]");
-    private static final Pattern TSS_CLOSE_PATTERN = Pattern.compile("\\[/TSS\\]");
-    private static final Pattern SUB_OPEN_PATTERN = Pattern.compile("\\[SUB:([a-z]{2})\\]");
-    private static final Pattern SUB_CLOSE_PATTERN = Pattern.compile("\\[/SUB\\]");
-    private static final Pattern ASR_OPEN_PATTERN = Pattern.compile("\\[ASR\\]");
-    private static final Pattern ASR_CLOSE_PATTERN = Pattern.compile("\\[/ASR\\]");
-    private static final Pattern DO_OPEN_PATTERN = Pattern.compile("\\[DO\\]");
-    private static final Pattern DO_CLOSE_PATTERN = Pattern.compile("\\[/DO\\]");
+    private static final Pattern TSS_OPEN_PATTERN = Pattern.compile("\\[TSS:([a-z]{2})]");
+    private static final Pattern TSS_CLOSE_PATTERN = Pattern.compile("\\[/TSS]");
+    private static final Pattern SUB_OPEN_PATTERN = Pattern.compile("\\[SUB:([a-z]{2})]");
+    private static final Pattern SUB_CLOSE_PATTERN = Pattern.compile("\\[/SUB]");
+    private static final Pattern ASR_OPEN_PATTERN = Pattern.compile("\\[ASR]");
+    private static final Pattern ASR_CLOSE_PATTERN = Pattern.compile("\\[/ASR]");
+    private static final Pattern DO_OPEN_PATTERN = Pattern.compile("\\[DO]");
+    private static final Pattern DO_CLOSE_PATTERN = Pattern.compile("\\[/DO]");
     
     /**
      * 解析器状态
@@ -308,7 +309,7 @@ public class StreamingContentParser {
      * 清空缓冲区
      */
     private void flushBuffer(ParserContext context) {
-        if (context.buffer.length() > 0) {
+        if (!context.buffer.isEmpty()) {
             processContent(context.buffer.toString(), context);
             context.buffer.setLength(0);
         }
@@ -336,6 +337,7 @@ public class StreamingContentParser {
     /**
      * 标签解析异常
      */
+    @Getter
     public static class TagParsingException extends RuntimeException {
         private final String fullContent;
         
@@ -343,9 +345,6 @@ public class StreamingContentParser {
             super(message);
             this.fullContent = fullContent;
         }
-        
-        public String getFullContent() {
-            return fullContent;
-        }
+
     }
 }

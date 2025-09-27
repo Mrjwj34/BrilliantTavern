@@ -1,7 +1,7 @@
 package com.github.jwj.brilliantavern.service;
 
-import com.github.jwj.brilliantavern.service.tts.TTSConfig;
-import com.github.jwj.brilliantavern.service.tts.TTSResponse;
+import com.github.jwj.brilliantavern.config.TTSConfig;
+import com.github.jwj.brilliantavern.dto.TTSResponse;
 import com.github.jwj.brilliantavern.service.tts.TTSService;
 import com.github.jwj.brilliantavern.service.tts.TTSStreamChunk;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.ByteArrayOutputStream;
 
@@ -64,6 +65,7 @@ public class TTSManagerService {
             ByteArrayOutputStream cacheCollector = new ByteArrayOutputStream();
 
             return ttsService.streamTextToSpeech(text, voiceId)
+                    .publishOn(Schedulers.boundedElastic())
                     .map(chunk -> {
                         if (isTestText && chunk.getAudioData() != null && chunk.getAudioData().length > 0) {
                             try {

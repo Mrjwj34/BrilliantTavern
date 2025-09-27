@@ -173,7 +173,7 @@ public class StreamingVoiceOrchestrator {
     }
     
     /**
-     * 保存AI回复到历史记录
+     * 保存完整对话轮次到历史记录
      */
     private Mono<Void> persistAIResponse(SessionState sessionState, String aiResponse) {
         return Mono.fromRunnable(() -> {
@@ -181,29 +181,44 @@ public class StreamingVoiceOrchestrator {
             
             // 检查是否应该持久化
             if (!sessionState.shouldPersist) {
-                log.info("由于处理错误，跳过AI回复历史保存: sessionId={}, messageId={}", 
+                log.info("由于处理错误，跳过对话历史保存: sessionId={}, messageId={}", 
                         sessionState.sessionId, sessionState.messageId);
                 sessionState.metrics.mark("history_skipped");
                 return;
             }
             
             try {
-                if (StringUtils.hasText(aiResponse)) {
-                    voiceChatService.saveChatHistory(
+                // 将AI回复存储到会话状态
+                sessionState.setAssistantMessage(aiResponse);
+                
+                // 如果有用户消息和AI回复，保存完整轮次
+                if (StringUtils.hasText(sessionState.getUserMessage()) && StringUtils.hasText(aiResponse)) {
+                    // 获取角色卡的开场白
+                    String greetingMessage = sessionState.sessionInfo.getCharacterCard().getGreetingMessage();
+                    
+                    voiceChatService.saveCompleteRound(
                             sessionState.sessionInfo.getHistoryId(),
                             UUID.fromString(sessionState.sessionId),
                             sessionState.sessionInfo.getUser().getId(),
                             sessionState.sessionInfo.getCharacterCardId(),
-                            ChatHistory.Role.ASSISTANT,
-                            aiResponse
+                            sessionState.getUserMessage(),
+                            aiResponse,
+                            greetingMessage
                     );
+                    
+                    sessionState.metrics.mark("history_done");
+                    log.info("完整对话轮次保存成功: sessionId={}, messageId={}, userMsg={}, assistantMsg={}", 
+                            sessionState.sessionId, sessionState.messageId, 
+                            sessionState.getUserMessage().length(), aiResponse.length());
+                } else {
+                    log.warn("对话轮次不完整，跳过保存: sessionId={}, messageId={}, hasUserMsg={}, hasAssistantMsg={}", 
+                            sessionState.sessionId, sessionState.messageId,
+                            StringUtils.hasText(sessionState.getUserMessage()),
+                            StringUtils.hasText(aiResponse));
                 }
                 
-                sessionState.metrics.mark("history_done");
-                log.debug("AI回复历史保存成功: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId);
-                
             } catch (Exception e) {
-                log.error("保存AI回复历史失败: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId, e);
+                log.error("保存对话历史失败: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId, e);
                 // 数据库保存失败也标记为不应持久化，避免部分数据不一致
                 sessionState.shouldPersist = false;
                 sessionState.hasProcessingErrors = true;
@@ -261,5 +276,8 @@ public class StreamingVoiceOrchestrator {
         private boolean hasProcessingErrors = false; // 跟踪是否有处理错误
         @lombok.Builder.Default
         private boolean shouldPersist = true; // 标记是否应该持久化数据
+        // 新增：收集本轮对话数据
+        private String userMessage; // 用户消息（转写结果）
+        private String assistantMessage; // AI回复
     }
 }

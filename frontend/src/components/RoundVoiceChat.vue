@@ -48,6 +48,13 @@
           <h2>轮次语音对话</h2>
           <p v-if="selectedCharacter">当前角色：{{ selectedCharacter.name }}</p>
           <p v-else>请选择角色后开始对话</p>
+          <!-- 标题显示区域 -->
+          <div v-if="chatTitle" class="chat-title-area">
+            <span class="chat-title" :class="{ typing: titleTyping }">
+              {{ chatTitle }}
+              <span v-if="titleTyping" class="typing-cursor">|</span>
+            </span>
+          </div>
         </div>
         <div class="session-info" v-if="session">
           <span class="status-badge" :class="{ active: stompConnected }">{{ stompConnected ? '已连接' : '未连接' }}</span>
@@ -178,6 +185,11 @@ export default {
     const audioQueue = ref([])
     const currentAudio = ref(null)
     const chatListRef = ref(null)
+    
+    // 标题显示相关
+    const chatTitle = ref('')
+    const titleTyping = ref(false)
+    const titleAnimationTimer = ref(null)
 
     const loadingState = computed(() => loadingCharacters.value || historyLoading.value)
     const canRecord = computed(() => {
@@ -826,6 +838,9 @@ export default {
           case 'ERROR':
             handleError(message)
             break
+          case 'TITLE_UPDATE':
+            handleTitleUpdate(message)
+            break
           default:
             console.warn('未知的消息类型:', type)
             break
@@ -1201,6 +1216,37 @@ export default {
       notification.error(payload?.error || '语音处理失败')
     }
 
+    // 处理标题更新
+    const handleTitleUpdate = (message) => {
+      const { payload } = message
+      if (payload?.title) {
+        animateTitle(payload.title)
+      }
+    }
+
+    // 标题打字机动画效果
+    const animateTitle = (targetTitle) => {
+      if (titleAnimationTimer.value) {
+        clearInterval(titleAnimationTimer.value)
+        titleAnimationTimer.value = null
+      }
+
+      titleTyping.value = true
+      chatTitle.value = ''
+      let currentIndex = 0
+
+      titleAnimationTimer.value = setInterval(() => {
+        if (currentIndex < targetTitle.length) {
+          chatTitle.value += targetTitle[currentIndex]
+          currentIndex++
+        } else {
+          clearInterval(titleAnimationTimer.value)
+          titleAnimationTimer.value = null
+          titleTyping.value = false
+        }
+      }, 80) // 每80ms显示一个字符
+    }
+
     const scrollToBottom = () => {
       if (chatListRef.value) {
         chatListRef.value.scrollTop = chatListRef.value.scrollHeight
@@ -1248,6 +1294,10 @@ export default {
 
     onBeforeUnmount(async () => {
       clearInterval(recordTimer.value)
+      if (titleAnimationTimer.value) {
+        clearInterval(titleAnimationTimer.value)
+        titleAnimationTimer.value = null
+      }
       if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
         mediaRecorder.value.stop()
       }
@@ -1285,7 +1335,11 @@ export default {
       // 其他
       formatTime,
       chatListRef,
-      endSession
+      endSession,
+      
+      // 标题相关
+      chatTitle,
+      titleTyping
     }
   }
 }
@@ -1613,6 +1667,29 @@ export default {
   p {
     margin: 0;
     color: var(--text-secondary);
+  }
+
+  // 标题显示区域
+  .chat-title-area {
+    margin-top: 0.5rem;
+    
+    .chat-title {
+      display: inline-block;
+      font-size: 1rem;
+      color: var(--primary-color);
+      font-weight: 500;
+      
+      &.typing {
+        .typing-cursor {
+          animation: blink 1s infinite;
+        }
+      }
+      
+      .typing-cursor {
+        color: var(--primary-color);
+        font-weight: normal;
+      }
+    }
   }
 }
 

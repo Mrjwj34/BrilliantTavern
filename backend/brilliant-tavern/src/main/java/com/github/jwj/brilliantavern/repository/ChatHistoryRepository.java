@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.repository;
 import com.github.jwj.brilliantavern.entity.ChatHistory;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -52,7 +53,8 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     @Query("SELECT ch.historyId, ch.cardId, " +
            "MIN(ch.timestamp) as startTime, MAX(ch.timestamp) as lastTime, " +
            "COUNT(ch.id) as messageCount, " +
-           "(SELECT ch2.content FROM ChatHistory ch2 WHERE ch2.historyId = ch.historyId ORDER BY ch2.timestamp ASC LIMIT 1) as firstMessage " +
+           "'' as firstMessage, " +
+           "MAX(CASE WHEN ch.title IS NOT NULL THEN ch.title ELSE '' END) as title " +
            "FROM ChatHistory ch " +
            "WHERE ch.userId = :userId " +
            "GROUP BY ch.historyId, ch.cardId " +
@@ -65,7 +67,8 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     @Query("SELECT ch.historyId, ch.cardId, " +
            "MIN(ch.timestamp) as startTime, MAX(ch.timestamp) as lastTime, " +
            "COUNT(ch.id) as messageCount, " +
-           "(SELECT ch2.content FROM ChatHistory ch2 WHERE ch2.historyId = ch.historyId ORDER BY ch2.timestamp ASC LIMIT 1) as firstMessage " +
+           "'' as firstMessage, " +
+           "MAX(CASE WHEN ch.title IS NOT NULL THEN ch.title ELSE '' END) as title " +
            "FROM ChatHistory ch " +
            "WHERE ch.userId = :userId AND ch.cardId = :cardId " +
            "GROUP BY ch.historyId, ch.cardId " +
@@ -87,4 +90,11 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      */
     @Query("SELECT COUNT(ch) FROM ChatHistory ch WHERE ch.userId = :userId AND ch.cardId = :cardId")
     long countByUserAndCard(@Param("userId") UUID userId, @Param("cardId") UUID cardId);
+
+    /**
+     * 更新历史记录标题
+     */
+    @Modifying
+    @Query("UPDATE ChatHistory ch SET ch.title = :title WHERE ch.historyId = :historyId AND ch.role = 'ASSISTANT' AND ch.title IS NULL")
+    int updateHistoryTitle(@Param("historyId") UUID historyId, @Param("title") String title);
 }

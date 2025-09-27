@@ -76,6 +76,12 @@ public class ChatHistory {
     private OffsetDateTime timestamp;
 
     /**
+     * 对话标题 (仅在第一轮对话后自动生成，用于历史记录显示)
+     */
+    @Column(name = "title", length = 255)
+    private String title;
+
+    /**
      * 消息角色枚举
      */
     public enum Role {

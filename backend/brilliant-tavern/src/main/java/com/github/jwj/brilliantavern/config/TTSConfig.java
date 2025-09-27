@@ -1,4 +1,4 @@
-package com.github.jwj.brilliantavern.service.tts;
+package com.github.jwj.brilliantavern.config;
 
 import lombok.Data;
 

@@ -1,5 +1,6 @@
-package com.github.jwj.brilliantavern.service.tts;
+package com.github.jwj.brilliantavern.dto;
 
+import com.github.jwj.brilliantavern.config.TTSConfig;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

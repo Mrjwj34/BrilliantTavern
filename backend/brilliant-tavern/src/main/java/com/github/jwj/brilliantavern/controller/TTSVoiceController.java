@@ -5,7 +5,7 @@ import com.github.jwj.brilliantavern.dto.VoiceMarketFilter;
 import com.github.jwj.brilliantavern.entity.TTSVoice;
 import com.github.jwj.brilliantavern.exception.BusinessException;
 import com.github.jwj.brilliantavern.service.TTSManagerService;
-import com.github.jwj.brilliantavern.service.tts.TTSResponse;
+import com.github.jwj.brilliantavern.dto.TTSResponse;
 import com.github.jwj.brilliantavern.service.tts.TTSVoiceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

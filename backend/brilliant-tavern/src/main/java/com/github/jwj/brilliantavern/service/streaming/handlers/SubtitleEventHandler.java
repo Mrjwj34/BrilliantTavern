@@ -27,17 +27,12 @@ public class SubtitleEventHandler implements EventHandler {
     @Override
     public Flux<VoiceStreamEvent> handleEvent(TagEvent tagEvent, StreamingVoiceOrchestrator.SessionState sessionState) {
         String contextKey = sessionState.getSessionId() + "_" + sessionState.getMessageId();
-        
-        switch (tagEvent.getEventType()) {
-            case TAG_OPENED:
-                return handleSubtitleOpened(tagEvent, contextKey);
-            case CONTENT_CHUNK:
-                return handleSubtitleContent(tagEvent, contextKey, sessionState);
-            case TAG_CLOSED:
-                return handleSubtitleClosed(tagEvent, contextKey);
-            default:
-                return Flux.empty();
-        }
+
+        return switch (tagEvent.getEventType()) {
+            case TAG_OPENED -> handleSubtitleOpened(tagEvent, contextKey);
+            case CONTENT_CHUNK -> handleSubtitleContent(tagEvent, contextKey, sessionState);
+            case TAG_CLOSED -> handleSubtitleClosed(tagEvent, contextKey);
+        };
     }
 
     private Flux<VoiceStreamEvent> handleSubtitleOpened(TagEvent tagEvent, String contextKey) {

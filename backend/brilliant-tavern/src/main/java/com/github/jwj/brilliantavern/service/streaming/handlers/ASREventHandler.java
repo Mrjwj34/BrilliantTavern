@@ -82,8 +82,10 @@ public class ASREventHandler implements EventHandler {
         log.info("ASR转写完成: sessionId={}, messageId={}, transcription={}", 
                 tagEvent.getSessionId(), tagEvent.getMessageId(), transcription);
         
-        // 立即保存用户转写到历史记录
-        saveUserTranscription(sessionState, transcription);
+        // 将用户转写存储到会话状态中，等待完整轮次结束后统一保存
+        sessionState.setUserMessage(transcription);
+        log.debug("用户转写存储到会话状态: sessionId={}, messageId={}, transcription={}", 
+                sessionState.getSessionId(), sessionState.getMessageId(), transcription);
         
         return Flux.just(buildASRResultEvent(tagEvent, transcription));
     }
@@ -103,33 +105,6 @@ public class ASREventHandler implements EventHandler {
                 .build();
     }
 
-    private void saveUserTranscription(StreamingVoiceOrchestrator.SessionState sessionState, String transcription) {
-        try {
-            // 检查是否应该持久化
-            if (!sessionState.isShouldPersist()) {
-                log.info("由于处理错误，跳过用户转写历史保存: sessionId={}", sessionState.getSessionId());
-                return;
-            }
-            
-            if (StringUtils.hasText(transcription)) {
-                voiceChatService.saveChatHistory(
-                        sessionState.getSessionInfo().getHistoryId(),
-                        UUID.fromString(sessionState.getSessionId()),
-                        sessionState.getSessionInfo().getUser().getId(),
-                        sessionState.getSessionInfo().getCharacterCardId(),
-                        ChatHistory.Role.USER,
-                        transcription
-                );
-                
-                log.debug("用户转写历史保存成功: sessionId={}, transcription={}", sessionState.getSessionId(), transcription);
-            }
-        } catch (Exception e) {
-            log.error("保存用户转写历史失败: sessionId={}", sessionState.getSessionId(), e);
-            // 数据库保存失败标记为不应持久化
-            sessionState.setShouldPersist(false);
-            sessionState.setHasProcessingErrors(true);
-        }
-    }
 
     private static class ASRContext {
         String sessionId;

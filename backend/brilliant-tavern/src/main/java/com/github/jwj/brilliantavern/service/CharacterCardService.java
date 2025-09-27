@@ -659,20 +659,25 @@ public class CharacterCardService {
     }
 
     /**
-     * 将TTS voice数据库ID转换为reference_id
+     * 处理TTS音色ID，支持数据库ID和reference_id两种格式
      */
     private String convertVoiceIdToReferenceId(String voiceIdStr) {
         if (voiceIdStr == null || voiceIdStr.trim().isEmpty()) {
             return null;
         }
         
+        String trimmedId = voiceIdStr.trim();
+        
+        // 尝试解析为数字ID
         try {
-            Long voiceId = Long.parseLong(voiceIdStr.trim());
+            Long voiceId = Long.parseLong(trimmedId);
             return ttsVoiceRepository.findById(voiceId)
                     .map(TTSVoice::getReferenceId)
                     .orElseThrow(() -> new BusinessException("TTS音色不存在: " + voiceId));
         } catch (NumberFormatException e) {
-            throw new BusinessException("TTS音色ID格式错误: " + voiceIdStr);
+            // 如果不是数字，就假设是reference_id，直接返回
+            log.debug("音色ID不是数字格式，将其作为reference_id处理: {}", trimmedId);
+            return trimmedId;
         }
     }
 }

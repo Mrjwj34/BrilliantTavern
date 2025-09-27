@@ -15,11 +15,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -37,6 +40,8 @@ public class VoiceChatService {
     private final TTSVoiceRepository ttsVoiceRepository;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final AIService aiService;
+    private final SimpMessagingTemplate messagingTemplate;
     
     // Redis键前缀
     private static final String SESSION_KEY_PREFIX = "voice_chat_session:";
@@ -119,21 +124,8 @@ public class VoiceChatService {
         redisTemplate.opsForSet().add(userSessionKey, sessionId.toString());
         redisTemplate.expire(userSessionKey, SESSION_EXPIRE_HOURS, TimeUnit.HOURS);
         
-        // 如果是新历史记录且有开场白，保存开场白到历史记录
-        if (isNewHistory && 
-            characterCard.getGreetingMessage() != null && 
-            !characterCard.getGreetingMessage().trim().isEmpty()) {
-            
-            saveChatHistory(
-                historyId,
-                sessionId,
-                user.getId(),
-                characterCard.getId(),
-                ChatHistory.Role.ASSISTANT,
-                characterCard.getGreetingMessage()
-            );
-            log.debug("保存开场白到历史记录: historyId={}, sessionId={}", historyId, sessionId);
-        }
+        // 注意: 新的逻辑是不再在创建会话时保存开场白，而是等第一轮对话完成后再保存
+        // 这样避免了没有实际对话就产生历史记录的问题
         
         log.info("语音聊天会话创建成功，会话ID: {}", sessionId);
         return session;
@@ -171,6 +163,162 @@ public class VoiceChatService {
         chatHistoryRepository.save(chatHistory);
         log.debug("保存对话历史: historyId={}, sessionId={}, role={}, content length={}", 
                 historyId, sessionId, role, content.length());
+    }
+
+    /**
+     * 保存一轮完整对话（包括用户消息和AI回复，包含开场白）
+     * 第一轮对话后会异步生成标题
+     */
+    @Transactional
+    public void saveCompleteRound(UUID historyId, UUID sessionId, UUID userId, UUID cardId,
+                                 String userMessage, String assistantMessage, String greetingMessage) {
+        OffsetDateTime now = OffsetDateTime.now();
+        
+        // 检查是否是第一轮对话
+        boolean isFirstRound = chatHistoryRepository.findByHistoryIdOrderByTimestampAsc(historyId).isEmpty();
+        
+        // 如果是第一轮且有开场白，先保存开场白
+        if (isFirstRound && greetingMessage != null && !greetingMessage.trim().isEmpty()) {
+            ChatHistory greetingHistory = ChatHistory.builder()
+                    .historyId(historyId)
+                    .sessionId(sessionId)
+                    .userId(userId)
+                    .cardId(cardId)
+                    .role(ChatHistory.Role.ASSISTANT)
+                    .content(greetingMessage)
+                    .timestamp(now.minusNanos(1000000)) // 稍微早一点的时间戳
+                    .build();
+            chatHistoryRepository.save(greetingHistory);
+        }
+        
+        // 保存用户消息
+        ChatHistory userHistory = ChatHistory.builder()
+                .historyId(historyId)
+                .sessionId(sessionId)
+                .userId(userId)
+                .cardId(cardId)
+                .role(ChatHistory.Role.USER)
+                .content(userMessage)
+                .timestamp(now)
+                .build();
+        chatHistoryRepository.save(userHistory);
+        
+        // 保存AI回复
+        ChatHistory assistantHistory = ChatHistory.builder()
+                .historyId(historyId)
+                .sessionId(sessionId)
+                .userId(userId)
+                .cardId(cardId)
+                .role(ChatHistory.Role.ASSISTANT)
+                .content(assistantMessage)
+                .timestamp(now.plusNanos(1000000)) // 稍微晚一点的时间戳
+                .build();
+        chatHistoryRepository.save(assistantHistory);
+        
+        log.info("保存完整对话轮次: historyId={}, sessionId={}, isFirstRound={}", 
+                historyId, sessionId, isFirstRound);
+        
+        // 如果是第一轮对话，异步生成标题
+        if (isFirstRound) {
+            generateTitleAsync(historyId, sessionId, userId, userMessage, assistantMessage);
+        }
+    }
+
+    /**
+     * 异步生成对话标题
+     */
+    @Async
+    public void generateTitleAsync(UUID historyId, UUID sessionId, UUID userId, String userMessage, String assistantMessage) {
+        try {
+            // 构建用于生成标题的提示
+            String titlePrompt = String.format(
+                    """
+                    请根据以下用户和AI助手的第一轮对话，生成一个简洁的中文标题（不超过20个字符），只返回标题本身，不要其他内容：
+                    
+                    用户：%s
+                    助手：%s""",
+                userMessage, assistantMessage
+            );
+            
+            log.info("开始异步生成标题: historyId={}", historyId);
+            
+            // 调用AI服务生成标题
+            String generatedTitle = aiService.generateSimpleText(titlePrompt);
+            
+            if (generatedTitle != null && !generatedTitle.trim().isEmpty()) {
+                String title = generatedTitle.trim();
+                // 确保标题不超过20个字符
+                if (title.length() > 20) {
+                    title = title.substring(0, 20) + "...";
+                }
+                
+                // 更新数据库中的标题
+                int updatedRows = chatHistoryRepository.updateHistoryTitle(historyId, title);
+                
+                log.info("标题生成完成: historyId={}, title={}, updatedRows={}", historyId, title, updatedRows);
+                
+                // 通过WebSocket通知前端标题已生成
+                sendTitleUpdateToUser(sessionId, userId, historyId, title);
+                
+                // 同时通知侧边栏更新
+                sendHistoryUpdateToUser(userId);
+                
+            } else {
+                log.warn("AI生成的标题为空: historyId={}", historyId);
+            }
+            
+        } catch (Exception e) {
+            log.error("生成标题失败: historyId={}", historyId, e);
+        }
+    }
+
+    /**
+     * 通过WebSocket发送标题更新给用户
+     */
+    private void sendTitleUpdateToUser(UUID sessionId, UUID userId, UUID historyId, String title) {
+        try {
+            Map<String, Object> titleUpdate = Map.of(
+                "type", "TITLE_UPDATE",
+                "historyId", historyId.toString(),
+                "title", title,
+                "timestamp", System.currentTimeMillis()
+            );
+            
+            // 发送到用户的会话
+            messagingTemplate.convertAndSendToUser(
+                userId.toString(),
+                "/topic/voice-chat/" + sessionId.toString(),
+                titleUpdate
+            );
+            
+            log.debug("发送标题更新通知: userId={}, sessionId={}, historyId={}, title={}", 
+                    userId, sessionId, historyId, title);
+        } catch (Exception e) {
+            log.error("发送标题更新通知失败: userId={}, sessionId={}", userId, sessionId, e);
+        }
+    }
+
+    /**
+     * 通知用户历史记录已更新
+     */
+    private void sendHistoryUpdateToUser(UUID userId) {
+        try {
+            Map<String, Object> historyUpdate = Map.of(
+                "type", "HISTORY_REFRESH",
+                "timestamp", System.currentTimeMillis()
+            );
+            
+            // 发送到用户的全局频道
+            messagingTemplate.convertAndSendToUser(
+                userId.toString(),
+                "/topic/history-updates",
+                historyUpdate
+            );
+            
+            log.debug("发送历史更新通知: userId={}", userId);
+        } catch (Exception e) {
+            log.error("发送历史更新通知失败: userId={}", userId, e);
+        }
     }
 
     /**
@@ -315,11 +463,17 @@ public class VoiceChatService {
         java.time.OffsetDateTime lastTime = (java.time.OffsetDateTime) result[3];
         Long messageCount = (Long) result[4];
         String firstMessage = (String) result[5];
+        String dbTitle = (String) result[6]; // 数据库中的标题
         
         // 获取角色卡名称
         String cardName = characterCardRepository.findById(cardId)
                 .map(card -> card.getName())
                 .orElse("未知角色");
+        
+        // 使用数据库中的标题，如果没有则生成默认标题
+        String title = (dbTitle != null && !dbTitle.trim().isEmpty()) 
+                ? dbTitle 
+                : "新对话"; // 简化默认标题，因为现在不再使用firstMessage
         
         return ChatSessionSummaryDTO.builder()
                 .sessionId(historyId) // 使用historyId作为sessionId，保持前端兼容性
@@ -329,25 +483,10 @@ public class VoiceChatService {
                 .lastTime(lastTime)
                 .messageCount(messageCount)
                 .firstMessage(firstMessage)
-                .title(generateSessionTitle(firstMessage))
+                .title(title)
                 .build();
     }
 
-    /**
-     * 生成会话标题
-     */
-    private String generateSessionTitle(String firstMessage) {
-        if (firstMessage == null || firstMessage.trim().isEmpty()) {
-            return "新对话";
-        }
-        
-        String title = firstMessage.trim();
-        if (title.length() > 20) {
-            title = title.substring(0, 20) + "...";
-        }
-        
-        return title;
-    }
 
     /**
      * 会话信息内部类

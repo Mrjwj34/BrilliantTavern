@@ -1,6 +1,6 @@
 package com.github.jwj.brilliantavern.service.tts.impl;
 
-import com.github.jwj.brilliantavern.service.tts.TTSConfig;
+import com.github.jwj.brilliantavern.config.TTSConfig;
 import com.github.jwj.brilliantavern.service.tts.TTSService;
 import com.github.jwj.brilliantavern.service.tts.TTSStreamChunk;
 import lombok.RequiredArgsConstructor;

@@ -121,7 +121,7 @@
                   </button>
                 </div>
               </div>
-              <p class="history-item-preview">{{ session.firstMessage || '新对话' }}</p>
+              <!-- 历史记录预览移除第一条消息显示，改为显示角色名称 -->
               <div class="history-item-meta">
                 <span class="history-item-count">{{ session.messageCount }} 条</span>
                 <span class="history-item-time">{{ formatHistoryTime(session.lastTime) }}</span>
@@ -287,7 +287,7 @@
   </div>
 </template>
 <script>
-import { ref, reactive, onMounted, computed, provide } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, provide } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI, voiceChatAPI } from '@/api'
 import { storage, tokenUtils, format } from '@/utils'
@@ -295,6 +295,7 @@ import { notification } from '@/utils/notification'
 import CharacterMarket from '@/components/CharacterMarket.vue'
 import CharacterCreator from '@/components/CharacterCreator.vue'
 import VoiceChat from '@/views/VoiceChat.vue'
+import { Client } from '@stomp/stompjs'
 
 export default {
   name: 'Dashboard',
@@ -317,6 +318,10 @@ export default {
     const currentSessionId = ref(null)
     const selectedCharacterInMarket = ref(null) // 当前在市场中选中的角色
     const selectedSessionData = ref(null) // 当前选中的会话详细数据
+    
+    // WebSocket相关
+    const stompClient = ref(null)
+    const isStompConnected = ref(false)
 
     // 删除确认对话框
     const deleteConfirm = reactive({
@@ -549,10 +554,82 @@ export default {
       activeTab.value = 'welcome'
     }
 
+    // WebSocket相关方法
+    const connectWebSocket = () => {
+      if (!user.value?.id) {
+        console.warn('用户信息不完整，无法建立WebSocket连接')
+        return
+      }
+
+      const token = tokenUtils.getToken()
+      if (!token) {
+        console.warn('没有有效token，无法建立WebSocket连接')
+        return
+      }
+
+      try {
+        const client = new Client({
+          brokerURL: 'ws://localhost:8080/api/ws',
+          connectHeaders: {
+            'Authorization': `Bearer ${token}`
+          },
+          debug: function (str) {
+            console.log('STOMP Debug:', str)
+          },
+          onConnect: (frame) => {
+            console.log('历史更新WebSocket连接成功:', frame)
+            isStompConnected.value = true
+            
+            // 订阅历史更新通知
+            client.subscribe(`/user/${user.value.id}/topic/history-updates`, (message) => {
+              try {
+                const data = JSON.parse(message.body)
+                console.log('收到历史更新通知:', data)
+                
+                if (data.type === 'HISTORY_REFRESH') {
+                  // 刷新历史记录列表
+                  fetchChatSessions()
+                }
+              } catch (error) {
+                console.error('处理历史更新消息失败:', error)
+              }
+            })
+          },
+          onDisconnect: () => {
+            console.log('历史更新WebSocket连接断开')
+            isStompConnected.value = false
+          },
+          onStompError: (frame) => {
+            console.error('历史更新WebSocket错误:', frame)
+            isStompConnected.value = false
+          }
+        })
+
+        client.activate()
+        stompClient.value = client
+      } catch (error) {
+        console.error('建立历史更新WebSocket连接失败:', error)
+      }
+    }
+
+    const disconnectWebSocket = () => {
+      if (stompClient.value) {
+        stompClient.value.deactivate()
+        stompClient.value = null
+        isStompConnected.value = false
+        console.log('历史更新WebSocket连接已断开')
+      }
+    }
+
     onMounted(() => {
       loadUserInfo()
       initTheme()
       fetchChatSessions() // 加载历史对话
+      connectWebSocket() // 建立WebSocket连接用于实时更新
+    })
+
+    onUnmounted(() => {
+      disconnectWebSocket()
     })
 
     return {

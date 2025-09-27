@@ -328,4 +328,39 @@ public class AIService {
     }
 
     public record ProcessedAiResponse(String aiResponse, String userTranscription) {}
+
+    /**
+     * 生成简单文本响应（用于标题生成等场景）
+     */
+    public String generateSimpleText(String prompt) {
+        try {
+            Part textPart = Part.fromText(prompt);
+            List<Content> contents = List.of(Content.fromParts(textPart));
+
+            GenerateContentConfig config = GenerateContentConfig.builder()
+                    .temperature(0.7f)
+                    .maxOutputTokens(50)
+                    .build();
+
+            GenerateContentResponse response = genAIClient.models.generateContent(
+                genAIConfig.getVertexAi().getModel(),
+                contents,
+                config
+            );
+
+            if (response != null) {
+                String text = response.text();
+                if (StringUtils.hasText(text)) {
+                    return text.trim();
+                }
+            }
+
+            log.warn("AI响应为空或格式异常");
+            return null;
+
+        } catch (Exception e) {
+            log.error("生成简单文本失败", e);
+            return null;
+        }
+    }
 }
