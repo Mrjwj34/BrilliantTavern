@@ -33,6 +33,7 @@ public class StreamingVoiceOrchestrator {
     private final VoiceChatService voiceChatService;
     private final StreamingContentParser contentParser;
     private final AsyncEventDispatcher eventDispatcher;
+    private final RetryService retryService;
     
     // 会话状态管理
     private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
@@ -59,12 +60,20 @@ public class StreamingVoiceOrchestrator {
             
             // 3. 发送处理完成事件
             sendProcessingCompleted(sessionState)
-        ).doOnError(error -> {
+        ).onErrorResume(error -> {
             log.error("语音处理失败: sessionId={}, messageId={}", sessionIdStr, messageId, error);
+            sessionState.hasProcessingErrors = true;
+            sessionState.shouldPersist = false;
+            
+            // 发送对话轮次丢弃事件
+            return Flux.concat(
+                    Flux.just(retryService.createRetryFailedEvent(sessionIdStr, messageId, "对话处理", error)),
+                    Flux.just(retryService.createRoundDiscardedEvent(sessionIdStr, messageId, "所有重试均失败，丢弃本次对话"))
+            );
+        }).doFinally(signal -> {
             sessionStates.remove(sessionIdStr);
-        }).doOnComplete(() -> {
-            log.info("语音处理完成: sessionId={}, messageId={}", sessionIdStr, messageId);
-            sessionStates.remove(sessionIdStr);
+            log.info("语音处理{}完成: sessionId={}, messageId={}", 
+                    sessionState.hasProcessingErrors ? "失败并" : "", sessionIdStr, messageId);
         });
     }
     
@@ -128,7 +137,7 @@ public class StreamingVoiceOrchestrator {
         // 解析标签并生成事件
         Flux<TagEvent> tagEvents = contentParser.parseStream(textStream, sessionState.sessionId, sessionState.messageId);
         
-        // 分发标签事件到各个处理器
+        // 分发标签事件到各个处理器，错误会被外层的重试机制处理
         Flux<VoiceStreamEvent> handlerEvents = tagEvents.flatMap(tagEvent -> 
                 eventDispatcher.dispatchEvent(tagEvent, sessionState));
         
@@ -147,56 +156,61 @@ public class StreamingVoiceOrchestrator {
     private Flux<VoiceStreamEvent> handleAICompletion(AIService.AIStreamEvent aiEvent, SessionState sessionState) {
         sessionState.metrics.mark("llm_completed");
         
-        // 保存对话历史
-        return persistHistory(sessionState, aiEvent.getProcessedResponse())
+        // 获取SUB标签内容，如果为空则使用完整响应作为备用
+        String subtitleContent = sessionState.getSubtitleContent().toString().trim();
+        String responseToSave = StringUtils.hasText(subtitleContent) ? subtitleContent : aiEvent.getProcessedResponse().aiResponse();
+        
+        // 只保存AI回复到历史记录，用户转写已在ASR事件中处理
+        return persistAIResponse(sessionState, responseToSave)
                 .then(Mono.just(VoiceStreamEvent.builder()
                         .type(VoiceStreamEvent.Type.ROUND_COMPLETED)
                         .sessionId(sessionState.sessionId)
                         .messageId(sessionState.messageId)
                         .timestamp(Instant.now().toEpochMilli())
-                        .payload(Map.of("text", aiEvent.getProcessedResponse().aiResponse()))
+                        .payload(Map.of("text", responseToSave))
                         .build()))
                 .flux();
     }
     
     /**
-     * 保存对话历史
+     * 保存AI回复到历史记录
      */
-    private Mono<Void> persistHistory(SessionState sessionState, AIService.ProcessedAiResponse processed) {
+    private Mono<Void> persistAIResponse(SessionState sessionState, String aiResponse) {
         return Mono.fromRunnable(() -> {
             sessionState.metrics.mark("history_start");
             
+            // 检查是否应该持久化
+            if (!sessionState.shouldPersist) {
+                log.info("由于处理错误，跳过AI回复历史保存: sessionId={}, messageId={}", 
+                        sessionState.sessionId, sessionState.messageId);
+                sessionState.metrics.mark("history_skipped");
+                return;
+            }
+            
             try {
-                if (StringUtils.hasText(processed.userTranscription())) {
-                    voiceChatService.saveChatHistory(
-                            sessionState.sessionInfo.getHistoryId(),
-                            UUID.fromString(sessionState.sessionId),
-                            sessionState.sessionInfo.getUser().getId(),
-                            sessionState.sessionInfo.getCharacterCardId(),
-                            ChatHistory.Role.USER,
-                            processed.userTranscription()
-                    );
-                }
-                
-                if (StringUtils.hasText(processed.aiResponse())) {
+                if (StringUtils.hasText(aiResponse)) {
                     voiceChatService.saveChatHistory(
                             sessionState.sessionInfo.getHistoryId(),
                             UUID.fromString(sessionState.sessionId),
                             sessionState.sessionInfo.getUser().getId(),
                             sessionState.sessionInfo.getCharacterCardId(),
                             ChatHistory.Role.ASSISTANT,
-                            processed.aiResponse()
+                            aiResponse
                     );
                 }
                 
                 sessionState.metrics.mark("history_done");
-                log.debug("对话历史保存成功: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId);
+                log.debug("AI回复历史保存成功: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId);
                 
             } catch (Exception e) {
-                log.error("保存对话历史失败: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId, e);
+                log.error("保存AI回复历史失败: sessionId={}, messageId={}", sessionState.sessionId, sessionState.messageId, e);
+                // 数据库保存失败也标记为不应持久化，避免部分数据不一致
+                sessionState.shouldPersist = false;
+                sessionState.hasProcessingErrors = true;
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
+
     
     /**
      * 发送处理完成事件
@@ -241,5 +255,11 @@ public class StreamingVoiceOrchestrator {
         private String messageId;
         private VoiceChatService.SessionInfo sessionInfo;
         private ConversationMetrics metrics;
+        @lombok.Builder.Default
+        private StringBuilder subtitleContent = new StringBuilder(); // 用于收集SUB标签内容
+        @lombok.Builder.Default
+        private boolean hasProcessingErrors = false; // 跟踪是否有处理错误
+        @lombok.Builder.Default
+        private boolean shouldPersist = true; // 标记是否应该持久化数据
     }
 }

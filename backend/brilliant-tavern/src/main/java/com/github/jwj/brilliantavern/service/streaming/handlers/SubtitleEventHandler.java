@@ -32,7 +32,7 @@ public class SubtitleEventHandler implements EventHandler {
             case TAG_OPENED:
                 return handleSubtitleOpened(tagEvent, contextKey);
             case CONTENT_CHUNK:
-                return handleSubtitleContent(tagEvent, contextKey);
+                return handleSubtitleContent(tagEvent, contextKey, sessionState);
             case TAG_CLOSED:
                 return handleSubtitleClosed(tagEvent, contextKey);
             default:
@@ -53,7 +53,7 @@ public class SubtitleEventHandler implements EventHandler {
         return Flux.just(buildSubtitleStartEvent(tagEvent));
     }
 
-    private Flux<VoiceStreamEvent> handleSubtitleContent(TagEvent tagEvent, String contextKey) {
+    private Flux<VoiceStreamEvent> handleSubtitleContent(TagEvent tagEvent, String contextKey, StreamingVoiceOrchestrator.SessionState sessionState) {
         SubtitleContext context = subtitleContexts.get(contextKey);
         if (context == null) {
             log.warn("字幕上下文不存在: sessionId={}, messageId={}", 
@@ -67,6 +67,9 @@ public class SubtitleEventHandler implements EventHandler {
         }
         
         context.contentBuffer.append(content);
+        // 同时收集到会话状态中，用于数据库存储
+        sessionState.getSubtitleContent().append(content);
+        
         int segmentOrder = context.segmentOrder.getAndIncrement();
         
         log.debug("字幕内容流式推送: sessionId={}, messageId={}, segmentOrder={}, content={}", 

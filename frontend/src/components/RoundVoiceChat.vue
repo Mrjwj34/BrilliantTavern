@@ -75,12 +75,20 @@
               <p v-else>{{ message.text }}</p>
               <div v-if="message.audioSegments && message.audioSegments.length" class="audio-segments">
                 <button
+                  v-if="message.audioSegments.length === 1"
+                  class="segment-btn"
+                  @click="playSegment(message.audioSegments[0])"
+                >
+                  ▶ 播放语音
+                </button>
+                <button
+                  v-else
                   v-for="segment in message.audioSegments"
                   :key="segment.segmentOrder"
                   class="segment-btn"
                   @click="playSegment(segment)"
                 >
-                  ▶ 第 {{ segment.segmentOrder + 1 }} 句
+                  ▶ 播放第 {{ segment.segmentOrder + 1 }} 段
                 </button>
               </div>
               <div v-if="message.status === 'pending'" class="pending-indicator">识别中...</div>
@@ -165,7 +173,7 @@ export default {
     const activeMessageId = ref(null)
     const userMessages = reactive(new Map())
     const assistantMessages = reactive(new Map())
-    const segmentBuffers = reactive(new Map())
+    // segmentBuffers已移除，现在直接处理完整音频
 
     const audioQueue = ref([])
     const currentAudio = ref(null)
@@ -227,7 +235,6 @@ export default {
       cleanupMessageAudios()
       userMessages.clear()
       assistantMessages.clear()
-      segmentBuffers.clear()
       try {
         const response = await voiceChatAPI.getHistory({ characterCardId: characterId, limit: 20 })
         if (response?.code === 200) {
@@ -264,7 +271,6 @@ export default {
       cleanupMessageAudios()
       userMessages.clear()
       assistantMessages.clear()
-      segmentBuffers.clear()
       try {
         const response = await voiceChatAPI.getSessionHistory(sessionId)
         if (response?.code === 200) {
@@ -301,7 +307,6 @@ export default {
       cleanupMessageAudios()
       userMessages.clear()
       assistantMessages.clear()
-      segmentBuffers.clear()
       try {
         const response = await voiceChatAPI.getCompleteHistory(cardId)
         if (response?.code === 200) {
@@ -442,7 +447,6 @@ export default {
       cleanupMessageAudios()
       userMessages.clear()
       assistantMessages.clear()
-      segmentBuffers.clear()
       try {
         const response = await voiceChatAPI.getHistoryById(historyId)
         if (response?.code === 200) {
@@ -569,8 +573,7 @@ export default {
         messages.value = []
         userMessages.clear()
         assistantMessages.clear()
-        segmentBuffers.clear()
-        session.value = null
+          session.value = null
         sessionClosing.value = false
       }
     }
@@ -621,108 +624,7 @@ export default {
       return null
     }
 
-    const normalizeAudioMime = (format) => {
-      const fmt = (format || 'wav').toLowerCase()
-      switch (fmt) {
-        case 'mp3':
-        case 'mpeg':
-          return 'audio/mpeg'
-        case 'wav':
-        case 'wave':
-          return 'audio/wav'
-        case 'ogg':
-          return 'audio/ogg'
-        case 'webm':
-          return 'audio/webm'
-        default:
-          return `audio/${fmt}`
-      }
-    }
 
-    const hasWavHeader = (bytes) => {
-      if (!bytes || bytes.length < 12) return false
-      return bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-    }
-
-    const pcm16ToWav = (pcmBytes, {
-      sampleRate = 44100,
-      channels = 1,
-      bitsPerSample = 16
-    } = {}) => {
-      const bytesPerSample = bitsPerSample / 8
-      const blockAlign = channels * bytesPerSample
-      const byteRate = sampleRate * blockAlign
-      const dataLength = pcmBytes.length
-      const buffer = new ArrayBuffer(44 + dataLength)
-      const view = new DataView(buffer)
-      let offset = 0
-
-      const writeString = (str) => {
-        for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset++, str.charCodeAt(i))
-        }
-      }
-
-      writeString('RIFF')
-      view.setUint32(offset, 36 + dataLength, true); offset += 4
-      writeString('WAVE')
-      writeString('fmt ')
-      view.setUint32(offset, 16, true); offset += 4
-      view.setUint16(offset, 1, true); offset += 2 // PCM format
-      view.setUint16(offset, channels, true); offset += 2
-      view.setUint32(offset, sampleRate, true); offset += 4
-      view.setUint32(offset, byteRate, true); offset += 4
-      view.setUint16(offset, blockAlign, true); offset += 2
-      view.setUint16(offset, bitsPerSample, true); offset += 2
-      writeString('data')
-      view.setUint32(offset, dataLength, true); offset += 4
-
-      new Uint8Array(buffer, 44).set(pcmBytes)
-      return new Uint8Array(buffer)
-    }
-
-    const createAudioBlob = (bytes, state) => {
-      const { format, sampleRate, channels, bitsPerSample } = state
-      const normalizedFormat = (format || 'wav').toLowerCase()
-      console.debug('创建音频 Blob:', { 
-        format, 
-        sampleRate, 
-        channels, 
-        bitsPerSample, 
-        normalizedFormat, 
-        hasWavHeader: hasWavHeader(bytes) 
-      })
-      console.log('创建音频 Blob:', { 
-        format, 
-        sampleRate, 
-        channels, 
-        bitsPerSample, 
-        normalizedFormat, 
-        hasWavHeader: hasWavHeader(bytes) 
-      })
-      if (normalizedFormat === 'wav') {
-        if (!hasWavHeader(bytes)) {
-          const wavBytes = pcm16ToWav(bytes, {
-            sampleRate: sampleRate || 44100,
-            channels: channels || 1,
-            bitsPerSample: bitsPerSample || 16
-          })
-          console.debug('PCM 转 WAV 参数:', { 
-            sampleRate: sampleRate || 44100, 
-            channels: channels || 1, 
-            bitsPerSample: bitsPerSample || 16 
-          })
-          console.log('PCM 转 WAV 参数:', { 
-            sampleRate: sampleRate || 44100, 
-            channels: channels || 1, 
-            bitsPerSample: bitsPerSample || 16 
-          })
-          return new Blob([wavBytes], { type: 'audio/wav' })
-        }
-        return new Blob([bytes], { type: 'audio/wav' })
-      }
-      return new Blob([bytes], { type: normalizeAudioMime(normalizedFormat) })
-    }
 
     const toggleRecording = async () => {
       if (!isRecording.value) {
@@ -935,12 +837,16 @@ export default {
 
     const ensureAssistantMessage = (messageId) => {
       if (!assistantMessages.has(messageId)) {
+        // 获取对应的用户消息时间戳，确保助手消息在用户消息之后
+        const userMessage = userMessages.get(messageId)
+        const baseTimestamp = userMessage ? userMessage.timestamp : Date.now()
+        
         const newMessage = {
           id: `${messageId}-assistant`,
           role: 'assistant',
           text: '',
           status: 'streaming',
-          timestamp: Date.now(),
+          timestamp: baseTimestamp + 1, // 确保在用户消息之后
           audioSegments: [],
           finalSegmentOrder: null,
           completedByFallback: false
@@ -982,92 +888,74 @@ export default {
 
     const handleAudioChunk = (message) => {
       const { messageId, payload } = message
-      console.debug('处理音频分片:', { 
+      console.debug('处理音频数据:', { 
         messageId, 
-        sampleRate: payload?.sampleRate, 
-        channels: payload?.channels, 
-        bitsPerSample: payload?.bitsPerSample,
-        audioFormat: payload?.audioFormat
+        audioFormat: payload?.audioFormat,
+        audioDataSize: payload?.audioData?.length
       })
-      console.log('处理音频分片:', { 
+      console.log('处理音频数据:', { 
         messageId, 
-        sampleRate: payload?.sampleRate, 
-        channels: payload?.channels, 
-        bitsPerSample: payload?.bitsPerSample,
-        audioFormat: payload?.audioFormat
+        audioFormat: payload?.audioFormat,
+        audioDataSize: payload?.audioData?.length
       })
-      if (!messageId || !payload) return
+      if (!messageId || !payload || !payload.audioData) return
       
       ensureAssistantMessage(messageId)
-      const key = `${messageId}:${payload.segmentOrder}`
-      let state = segmentBuffers.get(key)
-      if (!state) {
-        state = {
-          chunks: [],
-          format: payload.audioFormat || 'wav',
-          sampleRate: payload.sampleRate || null,
-          channels: payload.channels || null,
-          bitsPerSample: payload.bitsPerSample || null,
-          messageId,
-          segmentOrder: payload.segmentOrder
-        }
-        segmentBuffers.set(key, state)
-      } else {
-        if (payload.sampleRate && !state.sampleRate) {
-          state.sampleRate = payload.sampleRate
-        }
-        if (payload.channels && !state.channels) {
-          state.channels = payload.channels
-        }
-        if (payload.bitsPerSample && !state.bitsPerSample) {
-          state.bitsPerSample = payload.bitsPerSample
-        }
-      }
-      if (payload.audioData) {
-        const decoded = decodeAudioPayload(payload.audioData)
-        if (decoded) {
-          state.chunks.push(decoded)
-        } else {
-          console.warn('音频数据解码失败，跳过该分片')
-          return
-        }
-      }
-      if (payload.isLast) {
-        finalizeAudioSegment(state)
-        segmentBuffers.delete(key)
-      }
-    }
-
-    const finalizeAudioSegment = (state) => {
-      console.debug('处理音频片段:', { messageId: state.messageId, segmentOrder: state.segmentOrder })
       
-      const total = state.chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-      if (!total) return
-      const buffer = new Uint8Array(total)
-      let offset = 0
-      for (const chunk of state.chunks) {
-        buffer.set(chunk, offset)
-        offset += chunk.length
+      // 直接处理完整音频数据（MP3格式）
+      const audioData = decodeAudioPayload(payload.audioData)
+      if (!audioData) {
+        console.warn('音频数据解码失败')
+        return
       }
-  const blob = createAudioBlob(buffer, state)
+      
+      console.log('创建完整音频 Blob:', {
+        format: payload.audioFormat || 'mp3',
+        size: audioData.length,
+        segmentOrder: payload.segmentOrder
+      })
+      
+      // 直接创建音频 blob，不再合并分片
+      const mimeType = getAudioMimeType(payload.audioFormat || 'mp3')
+      const blob = new Blob([audioData], { type: mimeType })
       const url = URL.createObjectURL(blob)
-
+      
       const segmentInfo = {
         url,
-        segmentOrder: state.segmentOrder,
-        messageId: state.messageId
+        segmentOrder: payload.segmentOrder || 0,
+        messageId
       }
+      
       enqueueAudio(segmentInfo)
-
-      const assistantMessage = assistantMessages.get(state.messageId)
+      
+      const assistantMessage = assistantMessages.get(messageId)
       if (assistantMessage) {
         assistantMessage.audioSegments = assistantMessage.audioSegments || []
         assistantMessage.audioSegments.push(segmentInfo)
         assistantMessage.audioSegments.sort((a, b) => a.segmentOrder - b.segmentOrder)
       }
       
-      // 立即尝试完成轮次（如果这是最后一个分段）
-      maybeCompleteRound(state.messageId, state.segmentOrder)
+      // 如果是最后一个音频段，完成轮次
+      if (payload.isLast) {
+        maybeCompleteRound(messageId, payload.segmentOrder || 0)
+      }
+    }
+
+    // 获取音频MIME类型
+    const getAudioMimeType = (format) => {
+      const normalizedFormat = (format || 'mp3').toLowerCase()
+      switch (normalizedFormat) {
+        case 'mp3':
+          return 'audio/mpeg'
+        case 'wav':
+          return 'audio/wav'
+        case 'ogg':
+          return 'audio/ogg'
+        case 'aac':
+          return 'audio/aac'
+        default:
+          return 'audio/mpeg' // 默认MP3
+      }
     }
 
     const maybeCompleteRound = (messageId, segmentOrder) => {
@@ -1166,18 +1054,29 @@ export default {
         return
       }
       const segment = audioQueue.value.shift()
+      console.log('播放音频片段:', { segmentOrder: segment.segmentOrder, messageId: segment.messageId })
+      
       const audio = new Audio(segment.url)
       currentAudio.value = { audio, segment }
+      
+      audio.onloadeddata = () => {
+        console.log('音频数据加载完成:', { duration: audio.duration, segmentOrder: segment.segmentOrder })
+      }
+      
       audio.onended = () => {
+        console.log('音频播放结束:', { segmentOrder: segment.segmentOrder })
         currentAudio.value = null
         playNextAudio()
       }
-      audio.onerror = () => {
+      
+      audio.onerror = (error) => {
+        console.error('音频播放错误:', { segmentOrder: segment.segmentOrder, error })
         currentAudio.value = null
         playNextAudio()
       }
+      
       audio.play().catch(error => {
-        console.warn('自动播放失败', error)
+        console.warn('自动播放失败', { segmentOrder: segment.segmentOrder, error })
         currentAudio.value = null
         playNextAudio()
       })
@@ -1196,8 +1095,9 @@ export default {
       if (!messageId || !payload) return
       
       const userMessage = userMessages.get(messageId)
-      if (userMessage) {
-        userMessage.text = payload.text || userMessage.text
+      if (userMessage && payload.text) {
+        // 使用打字机效果显示用户转写结果
+        addTypingEffect(userMessage, payload.text)
         userMessage.status = 'done'
       }
     }

@@ -3,7 +3,6 @@ package com.github.jwj.brilliantavern.service;
 import com.github.jwj.brilliantavern.config.GenAIConfig;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
-import com.github.jwj.brilliantavern.service.util.AsrMarkupProcessor;
 import com.google.genai.Client;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
@@ -36,6 +35,7 @@ public class AIService {
     private final Client genAIClient;
     private final GenAIConfig genAIConfig;
     private final ChatMemoryService chatMemoryService;
+    private final com.github.jwj.brilliantavern.service.streaming.RetryService retryService;
     
     @Value("classpath:prompts/character-chat-template.st")
     private Resource promptTemplate;
@@ -79,9 +79,25 @@ public class AIService {
     }
 
     /**
-     * 使用Gen AI处理消息 - 真流式实现
+     * 使用Gen AI处理消息 - 真流式实现，支持重试
      */
     private Flux<AIStreamEvent> processWithGenAI(List<Content> historyMessages,
+                                                 VoiceMessage voiceMessage,
+                                                 String conversationId,
+                                                 String messageId) {
+        return retryService.retryWithProgress(
+                createGenAIStream(historyMessages, voiceMessage, conversationId, messageId),
+                conversationId,
+                messageId,
+                "LLM调用",
+                context -> Flux.just(retryService.createRetryProgressEvent(context))
+        );
+    }
+    
+    /**
+     * 创建Gen AI流 - 单次调用逻辑
+     */
+    private Flux<AIStreamEvent> createGenAIStream(List<Content> historyMessages,
                                                  VoiceMessage voiceMessage,
                                                  String conversationId,
                                                  String messageId) {
@@ -119,8 +135,8 @@ public class AIService {
                             }
                         }
                         
-                        ProcessedAiResponse processed = processCompleteResponse(
-                            fullResponse.toString(), conversationId, null);
+                        // 直接发送完成事件，标签解析已在流式过程中完成
+                        ProcessedAiResponse processed = new ProcessedAiResponse(fullResponse.toString(), null);
                         sink.next(AIStreamEvent.completed(messageId, processed));
                         sink.complete();
 
@@ -289,43 +305,6 @@ public class AIService {
         return "自然、亲切";
     }
 
-    /**
-     * 处理完整回复，提取ASR转写并更新对话历史
-     */
-    private ProcessedAiResponse processCompleteResponse(String completeResponse,
-                                                        String conversationId,
-                                                        String userTranscriptionFallback) {
-        try {
-            AsrMarkupProcessor.Result result = AsrMarkupProcessor.process(completeResponse);
-
-            String aiResponse = StringUtils.hasText(result.sanitizedText())
-                    ? result.sanitizedText()
-                    : AsrMarkupProcessor.normalizeWhitespace(completeResponse);
-
-            String userTranscription = StringUtils.hasText(result.transcription())
-                    ? result.transcription()
-                    : AsrMarkupProcessor.normalizeWhitespace(userTranscriptionFallback);
-
-            if (StringUtils.hasText(userTranscription)) {
-                chatMemoryService.addUserMessage(conversationId, userTranscription);
-                log.debug("提取到用户转写内容: {}", userTranscription);
-            }
-
-            if (StringUtils.hasText(aiResponse)) {
-                chatMemoryService.addAssistantMessage(conversationId, aiResponse);
-            }
-
-            log.debug("更新对话历史成功，对话ID: {}", conversationId);
-            return new ProcessedAiResponse(aiResponse, userTranscription);
-
-        } catch (Exception e) {
-            log.error("处理完整回复失败", e);
-            return new ProcessedAiResponse(
-                    AsrMarkupProcessor.normalizeWhitespace(completeResponse),
-                    AsrMarkupProcessor.normalizeWhitespace(userTranscriptionFallback)
-            );
-        }
-    }
 
     /**
      * AI流式事件。

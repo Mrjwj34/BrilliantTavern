@@ -23,11 +23,12 @@ public class TTSManagerService {
 
     private final TTSService ttsService;
     private final TTSCacheService ttsCacheService;
+    private final com.github.jwj.brilliantavern.service.streaming.RetryService retryService;
 
     /**
-     * 流式生成语音（指定音色）。
+     * 流式生成语音（指定音色），支持重试
      */
-    public Flux<TTSStreamChunk> streamSpeechWithVoice(String text, String voiceId) {
+    public Flux<TTSStreamChunk> streamSpeechWithVoice(String text, String voiceId, String sessionId, String messageId) {
         if (text == null || text.trim().isEmpty()) {
             return Flux.error(new IllegalArgumentException("文本内容为空"));
         }
@@ -46,6 +47,19 @@ public class TTSManagerService {
             }
         }
 
+        return retryService.retryWithProgress(
+                createTTSStream(text, voiceId, isTestText),
+                sessionId,
+                messageId,
+                "TTS调用",
+                context -> Flux.just(retryService.createRetryProgressEvent(context))
+        );
+    }
+    
+    /**
+     * 创建TTS流 - 单次调用逻辑
+     */
+    private Flux<TTSStreamChunk> createTTSStream(String text, String voiceId, boolean isTestText) {
         return Flux.defer(() -> {
             ByteArrayOutputStream cacheCollector = new ByteArrayOutputStream();
 
@@ -67,6 +81,13 @@ public class TTSManagerService {
                         }
                     });
         });
+    }
+    
+    /**
+     * 流式生成语音（指定音色） - 向后兼容方法
+     */
+    public Flux<TTSStreamChunk> streamSpeechWithVoice(String text, String voiceId) {
+        return streamSpeechWithVoice(text, voiceId, "unknown", "unknown");
     }
 
     /**

@@ -22,8 +22,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,44 +109,45 @@ public class FishSpeechTTSService implements TTSService {
     @Override
     public Flux<TTSStreamChunk> streamTextToSpeech(String text, String voiceId) {
         String preview = text != null && text.length() > 50 ? text.substring(0, 50) + "..." : text;
-        log.info("FishSpeech TTS流式转换: 文本='{}', 音色='{}'", preview, voiceId);
+        log.info("FishSpeech TTS转换: 文本='{}', 音色='{}'", preview, voiceId);
 
         TTSConfig.AudioFormat formatEnum = resolveAudioFormat(audioFormat);
 
         return Flux.defer(() -> {
-            AtomicInteger chunkIndex = new AtomicInteger();
-            AtomicReference<byte[]> pending = new AtomicReference<>();
-
-            Flux<byte[]> audioFlux = invokeFishSpeech(text, voiceId)
+            // 收集所有音频数据到一个完整的MP3文件
+            return invokeFishSpeech(text, voiceId)
                     .map(buffer -> {
                         byte[] data = new byte[buffer.readableByteCount()];
                         buffer.read(data);
                         DataBufferUtils.release(buffer);
                         return data;
-                    });
-
-            Flux<byte[]> fluxWithTerminator = audioFlux
-                    .concatWith(Mono.fromSupplier(() -> new byte[0]));
-
-            return fluxWithTerminator
-                    .concatMap(bytes -> {
-                        byte[] previous = pending.getAndSet(bytes);
-                        if (previous == null) {
-                            return Mono.empty();
+                    })
+                    .collectList()
+                    .flatMapMany(chunks -> {
+                        try (ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+                            for (byte[] chunk : chunks) {
+                                outputStream.write(chunk);
+                            }
+                            byte[] completeAudio = outputStream.toByteArray();
+                            
+                            log.debug("FishSpeech TTS转换完成，音频大小: {} 字节", completeAudio.length);
+                            
+                            // 返回单个完整的音频块
+                            return Flux.just(TTSStreamChunk.builder()
+                                    .chunkIndex(0)
+                                    .audioData(completeAudio)
+                                    .audioFormat(formatEnum)
+                                    .sampleRate(sampleRate)
+                                    .channels(channels)
+                                    .bitsPerSample(bitsPerSample)
+                                    .last(true)
+                                    .build());
+                        } catch (Exception e) {
+                            return Flux.error(new RuntimeException("合并音频数据失败", e));
                         }
-                        boolean last = bytes.length == 0;
-                        return Mono.just(TTSStreamChunk.builder()
-                                .chunkIndex(chunkIndex.getAndIncrement())
-                                .audioData(previous)
-                                .audioFormat(formatEnum)
-                                .sampleRate(sampleRate)
-                                .channels(channels)
-                                .bitsPerSample(bitsPerSample)
-                                .last(last)
-                                .build());
                     })
                     .timeout(timeout)
-                    .doOnError(error -> log.error("FishSpeech TTS流式转换失败", error));
+                    .doOnError(error -> log.error("FishSpeech TTS转换失败", error));
         });
     }
 

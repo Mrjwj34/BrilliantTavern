@@ -90,7 +90,7 @@ public class TTSEventHandler implements EventHandler {
         
         String voiceId = getVoiceId(sessionState);
         
-        return ttsManagerService.streamSpeechWithVoice(ttsText, voiceId)
+        return ttsManagerService.streamSpeechWithVoice(ttsText, voiceId, sessionState.getSessionId(), sessionState.getMessageId())
                 .doOnSubscribe(sub -> sessionState.getMetrics().mark("tts_start"))
                 .doOnNext(chunk -> {
                     if (chunk.getAudioData() != null && chunk.getAudioData().length > 0) {

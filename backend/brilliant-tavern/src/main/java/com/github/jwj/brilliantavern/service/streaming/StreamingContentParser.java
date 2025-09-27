@@ -49,6 +49,8 @@ public class StreamingContentParser {
         String messageId;
         AtomicInteger position = new AtomicInteger(0);
         FluxSink<TagEvent> sink;
+        boolean hasValidTags = false; // 跟踪是否遇到有效标签
+        StringBuilder fullContent = new StringBuilder(); // 用于错误诊断
         
         ParserContext(String sessionId, String messageId, FluxSink<TagEvent> sink) {
             this.sessionId = sessionId;
@@ -73,6 +75,17 @@ public class StreamingContentParser {
                 () -> {
                     // 处理结束时的缓冲区内容
                     flushBuffer(context);
+                    
+                    // 检查是否解析到有效标签
+                    if (!context.hasValidTags) {
+                        String errorMsg = String.format("AI响应缺少必需的标签格式。完整内容: %s", 
+                                context.fullContent.toString());
+                        log.warn("标签解析失败: sessionId={}, messageId={}, content={}", 
+                                context.sessionId, context.messageId, context.fullContent.toString());
+                        sink.error(new TagParsingException(errorMsg, context.fullContent.toString()));
+                        return;
+                    }
+                    
                     sink.complete();
                 }
             );
@@ -88,6 +101,9 @@ public class StreamingContentParser {
             return;
         }
         
+        // 收集完整内容用于错误诊断
+        context.fullContent.append(chunk);
+        
         context.buffer.append(chunk);
         String bufferContent = context.buffer.toString();
         
@@ -97,9 +113,9 @@ public class StreamingContentParser {
             TagMatch match = findNextTag(bufferContent, processed);
             
             if (match == null) {
-                // 没有找到更多标签，处理剩余内容
+                // 没有找到更多标签，不处理剩余内容，等待更多数据
+                // 保留未完全匹配的内容在缓冲区
                 String remaining = bufferContent.substring(processed);
-                processContent(remaining, context);
                 context.buffer.setLength(0);
                 context.buffer.append(remaining);
                 break;
@@ -117,10 +133,13 @@ public class StreamingContentParser {
         }
         
         // 更新缓冲区，保留未处理的内容
-        if (processed > 0) {
+        if (processed > 0 && processed < bufferContent.length()) {
             String remaining = bufferContent.substring(processed);
             context.buffer.setLength(0);
             context.buffer.append(remaining);
+        } else if (processed >= bufferContent.length()) {
+            // 所有内容都已处理
+            context.buffer.setLength(0);
         }
     }
     
@@ -190,6 +209,7 @@ public class StreamingContentParser {
                 if (context.state == ParserState.NORMAL) {
                     context.state = ParserState.IN_TSS_TAG;
                     context.currentLanguage = language;
+                    context.hasValidTags = true;
                     context.sink.next(TagEvent.tssOpened(language, context.sessionId, context.messageId, position));
                 }
                 break;
@@ -197,18 +217,21 @@ public class StreamingContentParser {
                 if (context.state == ParserState.NORMAL) {
                     context.state = ParserState.IN_SUB_TAG;
                     context.currentLanguage = language;
+                    context.hasValidTags = true;
                     context.sink.next(TagEvent.subOpened(language, context.sessionId, context.messageId, position));
                 }
                 break;
             case ASR:
                 if (context.state == ParserState.NORMAL) {
                     context.state = ParserState.IN_ASR_TAG;
+                    context.hasValidTags = true;
                     context.sink.next(TagEvent.asrOpened(context.sessionId, context.messageId, position));
                 }
                 break;
             case DO:
                 if (context.state == ParserState.NORMAL) {
                     context.state = ParserState.IN_DO_TAG;
+                    context.hasValidTags = true;
                     context.sink.next(TagEvent.doOpened(context.sessionId, context.messageId, position));
                 }
                 break;
@@ -307,6 +330,22 @@ public class StreamingContentParser {
             this.tagType = tagType;
             this.isOpen = isOpen;
             this.language = language;
+        }
+    }
+    
+    /**
+     * 标签解析异常
+     */
+    public static class TagParsingException extends RuntimeException {
+        private final String fullContent;
+        
+        public TagParsingException(String message, String fullContent) {
+            super(message);
+            this.fullContent = fullContent;
+        }
+        
+        public String getFullContent() {
+            return fullContent;
         }
     }
 }
