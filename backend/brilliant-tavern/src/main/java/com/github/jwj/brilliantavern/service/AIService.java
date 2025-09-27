@@ -1,17 +1,15 @@
 package com.github.jwj.brilliantavern.service;
 
-import com.github.jwj.brilliantavern.config.VertexAIConfig;
+import com.github.jwj.brilliantavern.config.GenAIConfig;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
 import com.github.jwj.brilliantavern.service.util.AsrMarkupProcessor;
-import com.google.cloud.vertexai.VertexAI;
-import com.google.cloud.vertexai.api.Content;
-import com.google.cloud.vertexai.api.GenerateContentResponse;
-import com.google.cloud.vertexai.api.GenerationConfig;
-import com.google.cloud.vertexai.api.Part;
-import com.google.cloud.vertexai.generativeai.GenerativeModel;
-import com.google.cloud.vertexai.generativeai.ResponseHandler;
-import com.google.cloud.vertexai.generativeai.ResponseStream;
+import com.google.genai.Client;
+import com.google.genai.types.Content;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
+import com.google.genai.types.ThinkingConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * AI服务类，负责与Google Vertex AI集成处理语音对话
+ * AI服务类，负责与Google Gen AI集成处理语音对话
  * 使用ChatMemoryService管理对话历史，支持音频转写功能
  */
 @Slf4j
@@ -35,8 +33,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AIService {
 
-    private final VertexAI vertexAI;
-    private final VertexAIConfig vertexAIConfig;
+    private final Client genAIClient;
+    private final GenAIConfig genAIConfig;
     private final ChatMemoryService chatMemoryService;
     
     @Value("classpath:prompts/character-chat-template.st")
@@ -61,14 +59,17 @@ public class AIService {
                 chatMemoryService.limitHistory(conversationId, 40);
                 List<Content> historyMessages = chatMemoryService.getHistory(conversationId);
 
-                // 创建生成模型
-                GenerativeModel model = createGenerativeModel(systemPrompt);
-
                 log.debug("调用AI开始: conversationId={}, messageId={}, historySize={}, audioBytes={}",
                         conversationId, messageId, historyMessages.size(), voiceMessage.getAudioData().length);
 
-                // 创建聊天会话并发送消息
-                return processWithVertexAI(model, historyMessages, voiceMessage, conversationId, messageId)
+                // 设置系统指令到历史消息开头
+                if (StringUtils.hasText(systemPrompt)) {
+                    Content systemContent = Content.fromParts(Part.fromText(systemPrompt));
+                    historyMessages.add(0, systemContent);
+                }
+
+                // 使用Gen AI处理消息
+                return processWithGenAI(historyMessages, voiceMessage, conversationId, messageId)
                         .doOnError(error -> log.error("AI处理语音消息失败", error));
             } catch (Exception e) {
                 log.error("处理语音消息失败", e);
@@ -78,111 +79,164 @@ public class AIService {
     }
 
     /**
-     * 使用Vertex AI处理消息
+     * 使用Gen AI处理消息
      */
-    private Flux<AIStreamEvent> processWithVertexAI(GenerativeModel model,
-                                                    List<Content> historyMessages,
-                                                    VoiceMessage voiceMessage,
-                                                    String conversationId,
-                                                    String messageId) {
+    private Flux<AIStreamEvent> processWithGenAI(List<Content> historyMessages,
+                                                 VoiceMessage voiceMessage,
+                                                 String conversationId,
+                                                 String messageId) {
         return Flux.<AIStreamEvent>create(sink -> {
-                    List<Content> requestContents = new ArrayList<>();
-                    if (historyMessages != null && !historyMessages.isEmpty()) {
-                        requestContents.addAll(historyMessages);
-                    }
-
-                    Content audioContent = buildAudioContent(voiceMessage);
-                    requestContents.add(audioContent);
-
-                    ResponseStream<GenerateContentResponse> responseStream = null;
-                    StringBuilder fullResponse = new StringBuilder();
-
                     try {
-                        responseStream = model.generateContentStream(requestContents);
-
-                        for (GenerateContentResponse responseChunk : responseStream) {
-                            String delta = ResponseHandler.getText(responseChunk);
-                            if (StringUtils.hasText(delta)) {
-                                fullResponse.append(delta);
-                                sink.next(AIStreamEvent.chunk(messageId, delta));
-                            }
+                        // 构建请求内容
+                        List<Content> requestContents = new ArrayList<>();
+                        if (historyMessages != null && !historyMessages.isEmpty()) {
+                            requestContents.addAll(historyMessages);
                         }
 
-                        ProcessedAiResponse processed = processCompleteResponse(fullResponse.toString(), conversationId, null);
+                        Content audioContent = buildAudioContent(voiceMessage);
+                        requestContents.add(audioContent);
+
+                        // 创建生成配置
+                        GenerateContentConfig config = createGenerateContentConfig();
+
+                        StringBuilder fullResponse = new StringBuilder();
+
+                        // 使用新SDK的非流式API暂时代替，流式API需要进一步调研
+                        GenerateContentResponse response = genAIClient.models.generateContent(
+                            genAIConfig.getVertexAi().getModel(),
+                            requestContents,
+                            config
+                        );
+                        
+                        String responseText = response.text();
+                        if (StringUtils.hasText(responseText)) {
+                            fullResponse.append(responseText);
+                            // 模拟流式响应，分段发送
+                            String[] chunks = responseText.split("(?<=\\.)\\s+");
+                            for (String chunk : chunks) {
+                                if (StringUtils.hasText(chunk.trim())) {
+                                    sink.next(AIStreamEvent.chunk(messageId, chunk + " "));
+                                }
+                            }
+                        }
+                        
+                        ProcessedAiResponse processed = processCompleteResponse(
+                            fullResponse.toString(), conversationId, null);
                         sink.next(AIStreamEvent.completed(messageId, processed));
                         sink.complete();
+
                     } catch (Exception e) {
                         sink.error(e);
-                    } finally {
-                        // ResponseStream在当前SDK中不支持显式关闭，依赖GC即可
                     }
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
     /**
-     * 构建包含音频的内容
+     * 构建包含音频的多模态内容
+     * 
+     * 支持的音频格式:
+     * - WAV (audio/wav)
+     * - MP3 (audio/mpeg) 
+     * - WebM (audio/webm)
+     * - OGG (audio/ogg)
+     * - M4A (audio/m4a)
+     * - FLAC (audio/flac)
+     * - Opus (audio/opus)
+     * 
+     * @param voiceMessage 包含音频数据的语音消息
+     * @return 多模态Content对象，包含文本指令和音频数据
      */
     private Content buildAudioContent(VoiceMessage voiceMessage) {
-        String mimeType = getAudioMimeType(voiceMessage.getAudioFormat());
-
-        Part textPart = Part.newBuilder()
-                .setText("请理解并总结用户发送的音频内容，然后以角色身份进行自然对话回复。")
-                .build();
-
-        Part audioPart = Part.newBuilder()
-                .setInlineData(
-                    com.google.cloud.vertexai.api.Blob.newBuilder()
-                            .setMimeType(mimeType)
-                            .setData(com.google.protobuf.ByteString.copyFrom(voiceMessage.getAudioData()))
-                )
-                .build();
-
-        return Content.newBuilder()
-                .setRole("user")
-                .addParts(textPart)
-                .addParts(audioPart)
-                .build();
+        Part textPart = Part.fromText("请理解并总结用户发送的音频内容，然后以角色身份进行自然对话回复。");
+        
+        // 验证音频数据有效性
+        if (voiceMessage.getAudioData() == null || voiceMessage.getAudioData().length == 0) {
+            log.warn("接收到空的音频数据，仅使用文本部分");
+            return Content.fromParts(textPart);
+        }
+        
+        // 验证音频数据大小（避免过大的文件）
+        final int MAX_AUDIO_SIZE = 10 * 1024 * 1024; // 10MB限制
+        if (voiceMessage.getAudioData().length > MAX_AUDIO_SIZE) {
+            log.warn("音频文件过大: {}字节 > {}字节限制，仅使用文本部分", 
+                    voiceMessage.getAudioData().length, MAX_AUDIO_SIZE);
+            return Content.fromParts(textPart);
+        }
+        
+        try {
+            String mimeType = getAudioMimeType(voiceMessage.getAudioFormat());
+            Part audioPart = Part.fromBytes(voiceMessage.getAudioData(), mimeType);
+            
+            log.debug("构建多模态音频内容成功: 音频字节数={}, MIME类型={}, 格式={}", 
+                    voiceMessage.getAudioData().length, mimeType, voiceMessage.getAudioFormat());
+            
+            return Content.fromParts(textPart, audioPart);
+            
+        } catch (IllegalArgumentException e) {
+            log.warn("不支持的音频格式或数据格式错误: {}, 仅使用文本部分", e.getMessage());
+            return Content.fromParts(textPart);
+        } catch (Exception e) {
+            log.error("音频数据处理发生未知错误，仅使用文本部分: {}", e.getMessage(), e);
+            return Content.fromParts(textPart);
+        }
     }
 
     /**
-     * 创建生成模型
+     * 创建生成内容配置
      */
-    private GenerativeModel createGenerativeModel(String systemPrompt) {
-        VertexAIConfig.VertexAIProperties config = vertexAIConfig.getVertexAi();
+    private GenerateContentConfig createGenerateContentConfig() {
+        GenAIConfig.GenAIProperties config = genAIConfig.getVertexAi();
 
-        GenerationConfig.Builder generationConfigBuilder = GenerationConfig.newBuilder();
+        GenerateContentConfig.Builder configBuilder = GenerateContentConfig.builder();
+        
         if (config.getTemperature() != null) {
-            generationConfigBuilder.setTemperature(config.getTemperature().floatValue());
+            configBuilder.temperature(config.getTemperature().floatValue());
         }
         if (config.getMaxOutputTokens() != null) {
-            generationConfigBuilder.setMaxOutputTokens(config.getMaxOutputTokens());
+            configBuilder.maxOutputTokens(config.getMaxOutputTokens());
         }
-        return new GenerativeModel.Builder()
-                .setModelName(config.getModel())
-                .setVertexAi(vertexAI)
-                .setGenerationConfig(generationConfigBuilder.build())
-                .setSystemInstruction(Content.newBuilder()
-                        .addParts(Part.newBuilder().setText(systemPrompt))
-                        .build())
-                .build();
+        
+        // 设置thinking config，包含think_budget参数
+        if (config.getThinkBudget() != null) {
+            configBuilder.thinkingConfig(
+                ThinkingConfig.builder()
+                    .thinkingBudget(config.getThinkBudget())
+                    .build()
+            );
+            log.debug("设置think_budget参数: {}", config.getThinkBudget());
+        }
+        
+        return configBuilder.build();
     }
 
     /**
      * 根据音频格式获取对应的MimeType
+     * 支持Gemini模型常见的音频格式
      */
     private String getAudioMimeType(String audioFormat) {
-        if (audioFormat == null) {
-            return "application/octet-stream";
+        if (audioFormat == null || audioFormat.trim().isEmpty()) {
+            log.warn("音频格式为空，使用默认MIME类型");
+            return "audio/wav"; // 默认使用wav格式
         }
         
-        return switch (audioFormat.toLowerCase()) {
-            case "wav" -> "audio/wav";
-            case "mp3" -> "audio/mpeg";
+        String format = audioFormat.toLowerCase().trim();
+        return switch (format) {
+            case "wav", "wave" -> "audio/wav";
+            case "mp3", "mpeg" -> "audio/mpeg";
             case "webm" -> "audio/webm";
-            case "ogg" -> "audio/ogg";
-            case "m4a" -> "audio/m4a";
-            default -> "application/octet-stream";
+            case "ogg", "oga" -> "audio/ogg";
+            case "m4a", "aac" -> "audio/m4a";
+            case "flac" -> "audio/flac";
+            case "opus" -> "audio/opus";
+            case "mp4" -> "audio/mp4";
+            case "3gpp", "3gp" -> "audio/3gpp";
+            case "amr" -> "audio/amr";
+            case "awb" -> "audio/amr-wb";
+            default -> {
+                log.warn("未知音频格式: {}，使用默认MIME类型", format);
+                yield "audio/wav";
+            }
         };
     }
 

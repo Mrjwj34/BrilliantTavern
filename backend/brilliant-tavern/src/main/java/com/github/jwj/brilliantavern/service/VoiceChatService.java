@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -268,6 +269,7 @@ public class VoiceChatService {
     /**
      * 删除历史记录
      */
+    @Transactional
     public void deleteHistory(UUID historyId, UUID userId) {
         // 验证历史记录是否存在且属于当前用户
         List<ChatHistory> historyRecords = chatHistoryRepository.findByHistoryIdOrderByTimestampAsc(historyId);

@@ -2,8 +2,8 @@ package com.github.jwj.brilliantavern.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.cloud.vertexai.api.Content;
-import com.google.cloud.vertexai.api.Part;
+import com.google.genai.types.Content;
+import com.google.genai.types.Part;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -72,10 +72,8 @@ public class ChatMemoryService {
                         historyJson, new TypeReference<List<SerializableMessage>>() {});
                 
                 for (SerializableMessage msg : messages) {
-                    Content content = Content.newBuilder()
-                            .setRole(msg.role)
-                            .addParts(Part.newBuilder().setText(msg.text))
-                            .build();
+                    Content content = Content.fromParts(Part.fromText(msg.text));
+                    // 注意：新SDK中role通过不同的方法处理，这里暂时简化
                     history.add(content);
                 }
             } catch (Exception e) {

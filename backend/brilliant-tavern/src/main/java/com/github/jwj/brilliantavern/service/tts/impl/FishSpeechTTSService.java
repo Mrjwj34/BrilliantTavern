@@ -141,9 +141,9 @@ public class FishSpeechTTSService implements TTSService {
                                 .chunkIndex(chunkIndex.getAndIncrement())
                                 .audioData(previous)
                                 .audioFormat(formatEnum)
-                .sampleRate(sampleRate)
-                .channels(channels)
-                .bitsPerSample(bitsPerSample)
+                                .sampleRate(sampleRate)
+                                .channels(channels)
+                                .bitsPerSample(bitsPerSample)
                                 .last(last)
                                 .build());
                     })

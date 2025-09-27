@@ -57,15 +57,18 @@ spring:
           min-idle: 0
       timeout: 3000ms
 
-  # Google Cloud Vertex AI配置
-  google:
-    cloud:
-      project-id: ${VERTEX_AI_PROJECT_ID}
-      vertex-ai:
-        location: ${VERTEX_AI_LOCATION:us-central1}
-        model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
-        temperature: 0.7
-        max-output-tokens: 2048
+  # Google Gen AI配置
+google:
+  cloud:
+    project-id: ${VERTEX_AI_PROJECT_ID}
+    api-key: ${GOOGLE_API_KEY:}  # 可选，用于Gemini Developer API
+    vertex-ai:
+      location: ${VERTEX_AI_LOCATION:us-central1}
+      model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
+      temperature: 1.1
+      max-output-tokens: 2048
+      think-budget: 0  # 思考预算，设为0禁用思考模式
+      use-vertex-ai: true  # true使用Vertex AI，false使用Gemini Developer API
 
 
 
@@ -92,9 +95,9 @@ app:
       top-p: 0.8
       repetition-penalty: 1.1
       temperature: 0.8
-  sample-rate: 44100
-  channels: 1
-  bits-per-sample: 16
+      sample-rate: 44100
+      channels: 1
+      bits-per-sample: 16
   
   # 文件上传配置
   upload:
