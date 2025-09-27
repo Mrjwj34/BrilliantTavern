@@ -97,14 +97,26 @@
             </p>
           </div>
           <div v-else class="history-list">
-            <div
-              v-for="session in filteredChatSessions"
-              :key="session.sessionId"
-              :class="['history-item', { active: currentSessionId === session.sessionId }]"
-              @click="selectHistorySession(session)"
-            >
-              <div class="history-item-header">
-                <h4 class="history-item-title">{{ session.title }}</h4>
+            <transition-group name="history-item" tag="div">
+              <div
+                v-for="session in filteredChatSessions"
+                :key="session.sessionId"
+                :class="[
+                  'history-item', 
+                  { 
+                    active: currentSessionId === session.sessionId,
+                    'newly-inserted': isNewlyInserted(session.sessionId)
+                  }
+                ]"
+                @click="selectHistorySession(session)"
+              >
+                <div class="history-item-header">
+                  <h4 class="history-item-title">
+                    <span v-if="isTyping(session.sessionId)" class="typing-title">
+                      {{ getTypingText(session.sessionId) }}<span class="typing-cursor">|</span>
+                    </span>
+                    <span v-else>{{ session.title }}</span>
+                  </h4>
                 <div class="history-item-actions">
                   <span class="history-item-character">{{ session.cardName }}</span>
                   <button 
@@ -126,7 +138,8 @@
                 <span class="history-item-count">{{ session.messageCount }} 条</span>
                 <span class="history-item-time">{{ formatHistoryTime(session.lastTime) }}</span>
               </div>
-            </div>
+              </div>
+            </transition-group>
           </div>
         </div>
       </div>
@@ -318,6 +331,8 @@ export default {
     const currentSessionId = ref(null)
     const selectedCharacterInMarket = ref(null) // 当前在市场中选中的角色
     const selectedSessionData = ref(null) // 当前选中的会话详细数据
+    const newlyInsertedSessions = ref(new Set()) // 新插入的会话集合
+    const typingTitles = ref(new Map()) // 正在打字显示的标题
     
     // WebSocket相关
     const stompClient = ref(null)
@@ -353,13 +368,91 @@ export default {
       }
     })
 
+    // 计算属性用于安全访问集合和映射
+    const isNewlyInserted = (sessionId) => {
+      return newlyInsertedSessions.value && newlyInsertedSessions.value.has(sessionId)
+    }
+    
+    const isTyping = (sessionId) => {
+      return typingTitles.value && typingTitles.value.has(sessionId)
+    }
+    
+    const getTypingText = (sessionId) => {
+      return typingTitles.value ? typingTitles.value.get(sessionId) : ''
+    }
+
+    // 打字机动画
+    const startTypingAnimation = (sessionId, targetTitle) => {
+      // 检查是否已经在打字，避免重复动画
+      if (typingTitles.value.has(sessionId)) {
+        return
+      }
+      
+      typingTitles.value.set(sessionId, '')
+      let currentIndex = 0
+      
+      const typeNextChar = () => {
+        if (currentIndex < targetTitle.length && typingTitles.value.has(sessionId)) {
+          const currentText = typingTitles.value.get(sessionId) || ''
+          typingTitles.value.set(sessionId, currentText + targetTitle[currentIndex])
+          currentIndex++
+          setTimeout(typeNextChar, 80) // 80ms间隔打字，更好的视觉效果
+        } else {
+          // 打字完成，移除打字状态
+          setTimeout(() => {
+            typingTitles.value.delete(sessionId)
+          }, 1000) // 显示完成标题1秒后移除打字状态
+        }
+      }
+      
+      typeNextChar()
+    }
+    
+    // 获取显示的标题（打字中或正常标题）
+    const getDisplayTitle = (session) => {
+      if (typingTitles.value.has(session.sessionId)) {
+        return typingTitles.value.get(session.sessionId)
+      }
+      return session.title
+    }
+
     // 获取历史对话列表
-    const fetchChatSessions = async () => {
-      loadingHistory.value = true
+    const fetchChatSessions = async (isRealTimeUpdate = false) => {
+      if (!isRealTimeUpdate) {
+        loadingHistory.value = true
+      }
+      
       try {
         const response = await voiceChatAPI.getUserSessions({ limit: 20 })
         if (response?.code === 200) {
-          chatSessions.value = Array.isArray(response.data) ? response.data : []
+          const newSessions = Array.isArray(response.data) ? response.data : []
+          
+          if (isRealTimeUpdate) {
+            // 实时更新时，检测新增的会话和标题更新
+            const oldSessionIds = new Set(chatSessions.value.map(s => s.sessionId))
+            
+            // 检测新增的会话
+            newSessions.forEach(session => {
+              if (!oldSessionIds.has(session.sessionId)) {
+                newlyInsertedSessions.value.add(session.sessionId)
+                // 2秒后移除新增标记
+                setTimeout(() => {
+                  newlyInsertedSessions.value.delete(session.sessionId)
+                }, 2000)
+              }
+            })
+            
+            // 检测标题更新
+            newSessions.forEach(newSession => {
+              const oldSession = chatSessions.value.find(s => s.sessionId === newSession.sessionId)
+              if (oldSession && oldSession.title !== newSession.title && newSession.title !== '新对话') {
+                // 启动打字机效果
+                startTypingAnimation(newSession.sessionId, newSession.title)
+              }
+            })
+          }
+          
+          chatSessions.value = newSessions
         } else {
           chatSessions.value = []
           console.error('获取历史对话失败:', response?.message)
@@ -368,7 +461,9 @@ export default {
         console.error('获取历史对话异常:', error)
         chatSessions.value = []
       } finally {
-        loadingHistory.value = false
+        if (!isRealTimeUpdate) {
+          loadingHistory.value = false
+        }
       }
     }
 
@@ -579,7 +674,7 @@ export default {
               try {
                 const data = JSON.parse(message.body)
                 if (data.type === 'HISTORY_REFRESH') {
-                  fetchChatSessions()
+                  fetchChatSessions(true) // 标记为实时更新
                 }
               } catch (error) {
               }
@@ -659,7 +754,12 @@ export default {
       deleteConfirm,
       formatHistoryTime,
       handleCharacterSelected,
-      handleCharacterDeselected
+      handleCharacterDeselected,
+      
+      // 动画相关函数
+      isNewlyInserted,
+      isTyping,
+      getTypingText
     }
   }
 }
@@ -1122,6 +1222,68 @@ export default {
 .history-item-time {
   font-size: 0.7rem;
   opacity: 0.6;
+}
+
+// 历史记录动画效果
+.history-item-enter-active {
+  transition: all 0.4s ease;
+}
+
+.history-item-enter-from {
+  opacity: 0;
+  transform: translateX(-20px) scale(0.95);
+}
+
+.history-item-enter-to {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.history-item-move {
+  transition: transform 0.3s ease;
+}
+
+// 新插入的会话高亮效果
+.history-item.newly-inserted {
+  animation: highlight-new 2s ease-out;
+}
+
+@keyframes highlight-new {
+  0% {
+    background: rgba(64, 158, 255, 0.2);
+    transform: scale(1.02);
+    border-color: var(--primary-color);
+  }
+  50% {
+    background: rgba(64, 158, 255, 0.1);
+  }
+  100% {
+    background: var(--background-tertiary);
+    transform: scale(1);
+    border-color: transparent;
+  }
+}
+
+// 打字机效果
+.typing-title {
+  position: relative;
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.typing-cursor {
+  animation: blink 1s infinite;
+  color: var(--primary-color);
+  font-weight: normal;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
 }
 
 // 用户信息
