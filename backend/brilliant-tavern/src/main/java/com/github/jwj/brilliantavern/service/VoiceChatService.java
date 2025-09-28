@@ -445,6 +445,58 @@ public class VoiceChatService {
             log.warn("没有找到需要更新的历史记录: historyId={}", historyId);
         }
     }
+    
+    /**
+     * 更新特定会话最新ASSISTANT消息的附件信息（支持合并）
+     */
+    @Transactional
+    public void updateLatestAssistantMessageAttachments(UUID sessionId, String attachmentsJson) {
+        log.info("开始更新会话最新ASSISTANT消息附件信息: sessionId={}, attachments={}", sessionId, attachmentsJson);
+        
+        try {
+            // 获取现有的附件信息
+            String existingAttachments = chatHistoryRepository.getLatestAssistantMessageAttachments(sessionId);
+            
+            String finalAttachmentsJson = attachmentsJson;
+            
+            // 如果存在旧的附件，尝试合并
+            if (StringUtils.hasText(existingAttachments)) {
+                log.info("发现现有附件，尝试合并: sessionId={}, existing={}", sessionId, existingAttachments);
+                
+                try {
+                    // 解析现有附件和新附件
+                    Map<String, Object> existingData = objectMapper.readValue(existingAttachments, Map.class);
+                    Map<String, Object> newData = objectMapper.readValue(attachmentsJson, Map.class);
+                    
+                    // 合并图片列表
+                    List<Object> existingImages = (List<Object>) existingData.getOrDefault("images", new java.util.ArrayList<>());
+                    List<Object> newImages = (List<Object>) newData.getOrDefault("images", new java.util.ArrayList<>());
+                    
+                    existingImages.addAll(newImages);
+                    existingData.put("images", existingImages);
+                    
+                    finalAttachmentsJson = objectMapper.writeValueAsString(existingData);
+                    log.info("附件合并成功: sessionId={}, merged={}", sessionId, finalAttachmentsJson);
+                    
+                } catch (Exception e) {
+                    log.warn("附件合并失败，使用新附件覆盖: sessionId={}, error={}", sessionId, e.getMessage());
+                    // 如果合并失败，仍使用新的附件
+                }
+            }
+            
+            int updatedRows = chatHistoryRepository.updateLatestAssistantMessageAttachments(sessionId, finalAttachmentsJson);
+            
+            log.info("会话最新ASSISTANT消息附件信息更新完成: sessionId={}, updatedRows={}, attachments={}", 
+                    sessionId, updatedRows, finalAttachmentsJson);
+            
+            if (updatedRows == 0) {
+                log.warn("没有找到需要更新的会话消息记录: sessionId={}", sessionId);
+            }
+            
+        } catch (Exception e) {
+            log.error("更新会话最新ASSISTANT消息附件信息失败: sessionId={}", sessionId, e);
+        }
+    }
 
     /**
      * 删除历史记录

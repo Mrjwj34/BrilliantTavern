@@ -163,9 +163,10 @@
               <p v-if="message.status === 'error'" class="error-text">{{ message.text }}</p>
               <p v-else class="message-text">
                 <span 
-                  :id="`message-text-${message.id}`"
+                  :id="`message-text-${message.role}-${message.id}`"
                   class="text-content"
                   :data-message-id="message.id"
+                  :data-message-role="message.role"
                 >
                   {{ message.text }}
                 </span>
@@ -1293,7 +1294,8 @@ export default {
             const userMessage = userMessages.get(messageId)
             if (userMessage && userMessage.status !== 'error') {
               userMessage.status = 'done'
-              if (!userMessage.text || userMessage.text === '识别中...') {
+              // 只有在没有最终ASR文本时才设置默认文本
+              if ((!userMessage.text || userMessage.text === '识别中...') && !userMessage.isFinalUserText) {
                 userMessage.text = '语音消息'
               }
             }
@@ -1323,7 +1325,8 @@ export default {
       if (userMessage) {
         if (userMessage.status !== 'error') {
           userMessage.status = 'done'
-          if (!userMessage.text || userMessage.text === '识别中...') {
+          // 只有在没有最终ASR文本时才设置默认文本
+          if ((!userMessage.text || userMessage.text === '识别中...') && !userMessage.isFinalUserText) {
             userMessage.text = '语音消息'
           }
         }
@@ -1369,7 +1372,7 @@ export default {
         if (audio.duration > 0) {
           const progress = (audio.currentTime / audio.duration)
           playingProgress.value = progress * 100
-          updateTextHighlight(messageId, progress, messageText)
+          updateTextHighlight(messageId, progress, messageText, 'assistant')
         }
       })
       
@@ -1380,7 +1383,7 @@ export default {
       audio.onended = () => {
         console.log('音频播放结束:', { segmentOrder: segment.segmentOrder })
         // 清理状态
-        clearTextHighlight(messageId)
+        clearTextHighlight(messageId, 'assistant')
         currentPlayingId.value = null
         currentPlayingAudio.value = null
         playingProgress.value = 0
@@ -1391,7 +1394,7 @@ export default {
       audio.onerror = (error) => {
         console.error('音频播放错误:', { segmentOrder: segment.segmentOrder, error })
         // 清理状态
-        clearTextHighlight(messageId)
+        clearTextHighlight(messageId, 'assistant')
         currentPlayingId.value = null
         currentPlayingAudio.value = null
         playingProgress.value = 0
@@ -1402,7 +1405,7 @@ export default {
       audio.play().catch(error => {
         console.warn('自动播放失败', { segmentOrder: segment.segmentOrder, error })
         // 清理状态
-        clearTextHighlight(messageId)
+        clearTextHighlight(messageId, 'assistant')
         currentPlayingId.value = null
         currentPlayingAudio.value = null
         playingProgress.value = 0
@@ -1429,7 +1432,7 @@ export default {
       if (currentPlayingAudio.value && currentPlayingId.value !== playId) {
         currentPlayingAudio.value.pause()
         const oldMessageId = currentPlayingId.value.split('-')[0]
-        clearTextHighlight(oldMessageId)
+        clearTextHighlight(oldMessageId, 'assistant')
         currentPlayingAudio.value = null
         currentPlayingId.value = null
         playingProgress.value = 0
@@ -1445,7 +1448,7 @@ export default {
             // 暂停播放
             currentPlayingAudio.value.pause()
             // 暂停时清除播放状态，让按钮变回播放状态
-            clearTextHighlight(message.id)
+            clearTextHighlight(message.id, 'assistant')
             currentPlayingAudio.value = null
             currentPlayingId.value = null
             playingProgress.value = 0
@@ -1464,13 +1467,13 @@ export default {
         if (audio.duration > 0) {
           const progress = (audio.currentTime / audio.duration)
           playingProgress.value = progress * 100
-          updateTextHighlight(message.id, progress, message.text)
+          updateTextHighlight(message.id, progress, message.text, 'assistant')
         }
       })
       
       // 播放结束时清理状态
       audio.addEventListener('ended', () => {
-        clearTextHighlight(message.id)
+        clearTextHighlight(message.id, 'assistant')
         currentPlayingAudio.value = null
         currentPlayingId.value = null
         playingProgress.value = 0
@@ -1478,7 +1481,7 @@ export default {
       
       // 播放失败时清理状态
       audio.addEventListener('error', () => {
-        clearTextHighlight(message.id)
+        clearTextHighlight(message.id, 'assistant')
         currentPlayingAudio.value = null
         currentPlayingId.value = null
         playingProgress.value = 0
@@ -1492,7 +1495,7 @@ export default {
       
       audio.play().catch(error => {
         console.warn('音频播放失败', error)
-        clearTextHighlight(message.id)
+        clearTextHighlight(message.id, 'assistant')
         currentPlayingAudio.value = null
         currentPlayingId.value = null
         playingProgress.value = 0
@@ -1500,12 +1503,18 @@ export default {
     }
 
     // 更新文字高亮效果 - 像字幕一样
-    const updateTextHighlight = (messageId, progress, text) => {
-      const textElement = document.getElementById(`message-text-${messageId}`)
-      console.log('updateTextHighlight:', { messageId, progress, text, textElement })
+    const updateTextHighlight = (messageId, progress, text, role = 'assistant') => {
+      // 只有AI消息才进行文字高亮，用户消息不应该被高亮
+      if (role === 'user') {
+        console.warn('跳过用户消息的文字高亮:', { messageId, role })
+        return
+      }
+      
+      const textElement = document.getElementById(`message-text-${role}-${messageId}`)
+      console.log('updateTextHighlight:', { messageId, progress, text, textElement, role })
       
       if (!textElement || !text) {
-        console.warn('文本元素未找到或文本为空:', { messageId, textElement, text })
+        console.warn('文本元素未找到或文本为空:', { messageId, textElement, text, role })
         return
       }
       
@@ -1530,14 +1539,18 @@ export default {
     }
 
     // 清除文字高亮效果
-    const clearTextHighlight = (messageId) => {
-      const textElement = document.getElementById(`message-text-${messageId}`)
-      console.log('clearTextHighlight:', { messageId, textElement })
+    const clearTextHighlight = (messageId, role = 'assistant') => {
+      // 只清除AI消息的高亮
+      if (role === 'user') return
+      
+      const textElement = document.getElementById(`message-text-${role}-${messageId}`)
+      console.log('clearTextHighlight:', { messageId, textElement, role })
       
       if (textElement) {
-        // 获取原始文本内容
-        const originalText = textElement.getAttribute('data-original-text') || textElement.textContent || textElement.innerText
-        textElement.innerHTML = originalText
+        const message = assistantMessages.get(messageId)
+        if (message && message.text) {
+          textElement.innerHTML = message.text
+        }
       }
     }
     
@@ -1594,9 +1607,12 @@ export default {
       
       const userMessage = userMessages.get(messageId)
       if (userMessage && payload.text) {
-        // 使用打字机效果显示用户转写结果
-        addTypingEffect(userMessage, payload.text)
+        // 对于用户消息，直接设置文本，不使用打字机效果
+        // 因为用户消息应该保持最终的ASR结果，不被后续的字幕流覆盖
+        userMessage.text = payload.text
         userMessage.status = 'done'
+        // 标记这是用户的最终文本，防止被字幕流覆盖
+        userMessage.isFinalUserText = true
       }
     }
 
@@ -1895,6 +1911,12 @@ export default {
     // 打字机效果实现
     const addTypingEffect = (message, newText) => {
       if (!newText) return
+      
+      // 如果这是用户消息且已经有最终文本，不要覆盖
+      if (message.role === 'user' && message.isFinalUserText) {
+        console.warn('跳过用户消息的打字机效果，因为已有最终文本:', message.text)
+        return
+      }
       
       // 如果已经有打字动画在进行，先清除
       if (message.typingTimer) {

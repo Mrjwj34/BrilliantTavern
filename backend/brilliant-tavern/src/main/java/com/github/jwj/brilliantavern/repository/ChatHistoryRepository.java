@@ -137,4 +137,18 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     @Transactional
     @Query("UPDATE ChatHistory ch SET ch.attachments = :attachments WHERE ch.historyId = :historyId AND ch.role = 'assistant'")
     int updateHistoryAttachments(@Param("historyId") UUID historyId, @Param("attachments") String attachments);
+    
+    /**
+     * 更新特定会话和消息的附件信息（精确定位到具体消息记录）
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE ChatHistory ch SET ch.attachments = :attachments WHERE ch.sessionId = :sessionId AND ch.role = 'assistant' AND ch.timestamp = (SELECT MAX(ch2.timestamp) FROM ChatHistory ch2 WHERE ch2.sessionId = :sessionId AND ch2.role = 'assistant')")
+    int updateLatestAssistantMessageAttachments(@Param("sessionId") UUID sessionId, @Param("attachments") String attachments);
+    
+    /**
+     * 获取特定会话最新ASSISTANT消息的附件信息
+     */
+    @Query("SELECT ch.attachments FROM ChatHistory ch WHERE ch.sessionId = :sessionId AND ch.role = 'assistant' AND ch.timestamp = (SELECT MAX(ch2.timestamp) FROM ChatHistory ch2 WHERE ch2.sessionId = :sessionId AND ch2.role = 'assistant')")
+    String getLatestAssistantMessageAttachments(@Param("sessionId") UUID sessionId);
 }

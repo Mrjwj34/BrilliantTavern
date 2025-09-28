@@ -139,10 +139,15 @@ public class MethodExecutionHandler implements EventHandler {
                     });
             })
             .doFinally(signalType -> {
-                // 当整个方法调用处理完成后，清理去重记录以释放内存
-                // 注意：这里可能需要根据实际需求调整清理策略
-                executedMethods.remove(sessionMessageKey);
-                log.debug("清理方法执行去重记录: sessionMessageKey={}", sessionMessageKey);
+                // 当整个方法调用处理完成后，延迟清理去重记录以释放内存
+                // 延迟清理是为了确保同一个消息内的重复调用能被正确过滤
+                Mono.delay(java.time.Duration.ofSeconds(30))
+                    .subscribeOn(Schedulers.boundedElastic())
+                    .doOnNext(delay -> {
+                        executedMethods.remove(sessionMessageKey);
+                        log.debug("延迟清理方法执行去重记录: sessionMessageKey={}", sessionMessageKey);
+                    })
+                    .subscribe();
             });
     }
 
@@ -273,16 +278,47 @@ public class MethodExecutionHandler implements EventHandler {
      */
     private Flux<VoiceStreamEvent> executeImagenMethod(TagEvent tagEvent, String[] params, 
                                                       StreamingVoiceOrchestrator.SessionState sessionState) {
-        if (params.length < 2) {
+        if (params.length < 1) {
             log.warn("imagen方法参数不足: sessionId={}, messageId={}, params={}", 
                     tagEvent.getSessionId(), tagEvent.getMessageId(), String.join(", ", params));
-            return Flux.just(buildMethodErrorEvent(tagEvent, "imagen方法需要2个参数: isSelf(boolean), description(string)"));
+            return Flux.just(buildMethodErrorEvent(tagEvent, "imagen方法至少需要1个参数: description(string)，可选参数: isSelf(boolean)"));
         }
 
         try {
-            // 解析参数
-            boolean isSelf = Boolean.parseBoolean(params[0].toLowerCase());
-            String description = params[1];
+            // 解析参数 - 支持key=value格式
+            boolean isSelf = false; // 默认值
+            String description = null;
+            
+            for (String param : params) {
+                String trimmedParam = param.trim();
+                if (trimmedParam.startsWith("isSelf=")) {
+                    String value = trimmedParam.substring("isSelf=".length()).trim();
+                    isSelf = Boolean.parseBoolean(value);
+                    log.debug("解析isSelf参数: {} -> {}", value, isSelf);
+                } else if (trimmedParam.startsWith("description=")) {
+                    description = trimmedParam.substring("description=".length()).trim();
+                    // 移除可能的引号
+                    if (description.startsWith("\"") && description.endsWith("\"")) {
+                        description = description.substring(1, description.length() - 1);
+                    }
+                    log.debug("解析description参数: {}", description);
+                } else {
+                    // 如果没有key=value格式，假设是description
+                    if (description == null) {
+                        description = trimmedParam;
+                        if (description.startsWith("\"") && description.endsWith("\"")) {
+                            description = description.substring(1, description.length() - 1);
+                        }
+                        log.debug("默认解析为description参数: {}", description);
+                    }
+                }
+            }
+            
+            if (description == null || description.trim().isEmpty()) {
+                return Flux.just(buildMethodErrorEvent(tagEvent, "imagen方法缺少description参数"));
+            }
+            
+            log.info("imagen方法参数解析完成: isSelf={}, description={}", isSelf, description);
             
             // 发送图像生成开始事件
             VoiceStreamEvent startEvent = buildImageGenerationStartEvent(tagEvent, isSelf, description);

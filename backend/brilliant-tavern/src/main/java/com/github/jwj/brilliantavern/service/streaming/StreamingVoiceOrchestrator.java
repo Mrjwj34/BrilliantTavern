@@ -170,22 +170,21 @@ public class StreamingVoiceOrchestrator {
                                event.getType() == AIService.AIStreamEvent.Type.MEMORY_RETRIEVAL_COMPLETED)
                 .map(aiEvent -> handleMemoryRetrievalEvent(aiEvent, sessionState));
         
-        // 监听图像生成完成事件，收集图像信息
-        Flux<VoiceStreamEvent> imageCollectionEvents = handlerEvents
-                .filter(event -> event.getType() == VoiceStreamEvent.Type.METHOD_EXECUTION)
+        // 监听所有事件，对图像生成完成事件进行特殊处理
+        return Flux.merge(handlerEvents, completionEvents, memoryEvents)
                 .doOnNext(event -> {
-                    Map<String, Object> payload = event.getPayload();
-                    String action = payload != null ? (String) payload.get("action") : null;
-                    log.debug("处理METHOD_EXECUTION事件: sessionId={}, action={}", sessionState.sessionId, action);
-                    
-                    if (payload != null && "image_generation_completed".equals(action)) {
-                        log.info("检测到图像生成完成事件: sessionId={}, messageId={}", 
-                                sessionState.sessionId, sessionState.messageId);
-                        collectImageAttachment(event, sessionState);
+                    // 监听图像生成完成事件，收集图像信息
+                    if (event.getType() == VoiceStreamEvent.Type.METHOD_EXECUTION) {
+                        Map<String, Object> payload = event.getPayload();
+                        String action = payload != null ? (String) payload.get("action") : null;
+                        
+                        if (payload != null && "image_generation_completed".equals(action)) {
+                            log.info("检测到图像生成完成事件: sessionId={}, messageId={}", 
+                                    sessionState.sessionId, sessionState.messageId);
+                            collectImageAttachment(event, sessionState);
+                        }
                     }
                 });
-        
-        return Flux.merge(handlerEvents, completionEvents, memoryEvents, imageCollectionEvents);
     }
     
     /**
@@ -267,43 +266,45 @@ public class StreamingVoiceOrchestrator {
      * 更新已保存历史记录的附件信息
      */
     private void updateHistoryAttachments(SessionState sessionState) {
-        try {
-            log.info("尝试更新历史记录附件信息: sessionId={}, messageId={}", 
-                    sessionState.sessionId, sessionState.messageId);
-            
-            boolean hasUserMessage = StringUtils.hasText(sessionState.getUserMessage());
-            boolean hasAssistantMessage = StringUtils.hasText(sessionState.getAssistantMessage());
-            boolean hasImages = !sessionState.getGeneratedImages().isEmpty();
-            
-            log.info("更新附件条件检查: hasUserMessage={}, hasAssistantMessage={}, hasImages={}, imageCount={}", 
-                    hasUserMessage, hasAssistantMessage, hasImages, sessionState.getGeneratedImages().size());
-            
-            // 只要有图片就尝试更新（不依赖消息状态，因为消息可能已经保存并清理）
-            if (hasImages) {
-                
-                // 序列化图像附件信息
-                Map<String, Object> attachmentsData = Map.of("images", sessionState.getGeneratedImages());
-                String attachmentsJson = objectMapper.writeValueAsString(attachmentsData);
-                
-                log.info("准备更新数据库附件信息: historyId={}, attachmentsJson={}", 
-                        sessionState.sessionInfo.getHistoryId(), attachmentsJson);
-                
-                // 更新数据库中的附件信息
-                voiceChatService.updateHistoryAttachments(
-                        sessionState.sessionInfo.getHistoryId(),
-                        attachmentsJson
-                );
-                
-                log.info("更新历史记录附件信息成功: sessionId={}, messageId={}, imageCount={}", 
-                        sessionState.sessionId, sessionState.messageId, sessionState.getGeneratedImages().size());
-            } else {
-                log.info("不满足更新附件条件，跳过更新: sessionId={}, messageId={}", 
+        // 使用异步方式更新，避免阻塞主流
+        Mono.fromRunnable(() -> {
+            try {
+                log.info("尝试更新历史记录附件信息: sessionId={}, messageId={}", 
                         sessionState.sessionId, sessionState.messageId);
+                
+                boolean hasImages = !sessionState.getGeneratedImages().isEmpty();
+                
+                log.info("更新附件条件检查: hasImages={}, imageCount={}", 
+                        hasImages, sessionState.getGeneratedImages().size());
+                
+                // 只要有图片就尝试更新
+                if (hasImages) {
+                    // 序列化图像附件信息
+                    Map<String, Object> attachmentsData = Map.of("images", sessionState.getGeneratedImages());
+                    String attachmentsJson = objectMapper.writeValueAsString(attachmentsData);
+                    
+                    log.info("准备更新数据库附件信息: historyId={}, attachmentsJson={}", 
+                            sessionState.sessionInfo.getHistoryId(), attachmentsJson);
+                    
+                    // 更新数据库中的附件信息 - 只更新当前会话的最新ASSISTANT消息
+                    voiceChatService.updateLatestAssistantMessageAttachments(
+                            UUID.fromString(sessionState.sessionId),
+                            attachmentsJson
+                    );
+                    
+                    log.info("更新历史记录附件信息成功: sessionId={}, messageId={}, imageCount={}", 
+                            sessionState.sessionId, sessionState.messageId, sessionState.getGeneratedImages().size());
+                } else {
+                    log.info("不满足更新附件条件，跳过更新: sessionId={}, messageId={}", 
+                            sessionState.sessionId, sessionState.messageId);
+                }
+            } catch (Exception e) {
+                log.error("更新历史记录附件信息失败: sessionId={}, messageId={}", 
+                        sessionState.sessionId, sessionState.messageId, e);
             }
-        } catch (Exception e) {
-            log.error("更新历史记录附件信息失败: sessionId={}, messageId={}", 
-                    sessionState.sessionId, sessionState.messageId, e);
-        }
+        })
+        .subscribeOn(Schedulers.boundedElastic())
+        .subscribe();
     }
     
     /**
