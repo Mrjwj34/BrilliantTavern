@@ -232,8 +232,20 @@ public class CharacterMemoryService {
             memory.setCharacterCardId((UUID) result[2]);
             memory.setMemoryContent((String) result[3]);
             // 注意：embedding字段从数据库查询中不需要返回，因为它很大且在检索时不需要
-            memory.setCreatedAt(((java.sql.Timestamp) result[5]).toLocalDateTime().atOffset(java.time.ZoneOffset.UTC));
-            memory.setUpdatedAt(((java.sql.Timestamp) result[6]).toLocalDateTime().atOffset(java.time.ZoneOffset.UTC));
+            
+            // 处理时间类型转换，支持Timestamp和Instant
+            if (result[5] instanceof java.sql.Timestamp) {
+                memory.setCreatedAt(((java.sql.Timestamp) result[5]).toLocalDateTime().atOffset(java.time.ZoneOffset.UTC));
+            } else if (result[5] instanceof java.time.Instant) {
+                memory.setCreatedAt(((java.time.Instant) result[5]).atOffset(java.time.ZoneOffset.UTC));
+            }
+            
+            if (result[6] instanceof java.sql.Timestamp) {
+                memory.setUpdatedAt(((java.sql.Timestamp) result[6]).toLocalDateTime().atOffset(java.time.ZoneOffset.UTC));
+            } else if (result[6] instanceof java.time.Instant) {
+                memory.setUpdatedAt(((java.time.Instant) result[6]).atOffset(java.time.ZoneOffset.UTC));
+            }
+            
             return memory;
         } catch (Exception e) {
             log.error("映射CharacterMemory失败", e);

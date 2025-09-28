@@ -5,6 +5,7 @@ import com.github.jwj.brilliantavern.dto.voice.VoiceStreamEvent;
 import com.github.jwj.brilliantavern.entity.ChatHistory;
 import com.github.jwj.brilliantavern.service.AIService;
 import com.github.jwj.brilliantavern.service.VoiceChatService;
+import com.github.jwj.brilliantavern.service.ChatMemoryService;
 import com.github.jwj.brilliantavern.service.metrics.ConversationMetrics;
 import com.github.jwj.brilliantavern.service.streaming.handlers.*;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class StreamingVoiceOrchestrator {
 
     private final AIService aiService;
     private final VoiceChatService voiceChatService;
+    private final ChatMemoryService chatMemoryService;
     private final StreamingContentParser contentParser;
     private final AsyncEventDispatcher eventDispatcher;
     private final RetryService retryService;
@@ -121,7 +123,8 @@ public class StreamingVoiceOrchestrator {
                 voiceMessage.voiceMessage(),
                 sessionState.sessionInfo.getCharacterCard(),
                 sessionState.sessionId,
-                sessionState.messageId
+                sessionState.messageId,
+                sessionState.sessionInfo.getUserId()
         ).doOnNext(event -> {
             if (event.getType() == AIService.AIStreamEvent.Type.CHUNK) {
                 sessionState.metrics.markIfAbsent("llm_first_token");
@@ -134,10 +137,22 @@ public class StreamingVoiceOrchestrator {
                 .map(AIService.AIStreamEvent::getContent)
                 .filter(StringUtils::hasText);
         
-        // 解析标签并生成事件
-        Flux<TagEvent> tagEvents = contentParser.parseStream(textStream, sessionState.sessionId, sessionState.messageId);
+        // 解析标签并生成事件，包含标签解析错误处理
+        Flux<TagEvent> tagEvents = contentParser.parseStream(textStream, sessionState.sessionId, sessionState.messageId)
+                .onErrorResume(error -> {
+                    // 捕获标签解析错误，将其作为可重试的错误处理
+                    if (error instanceof StreamingContentParser.TagParsingException) {
+                        log.warn("标签解析失败，将触发重试: sessionId={}, messageId={}, error={}", 
+                                sessionState.sessionId, sessionState.messageId, error.getMessage());
+                        return Flux.error(error); // 传播错误以触发外层重试机制
+                    } else {
+                        log.error("标签解析过程中发生未知错误: sessionId={}, messageId={}", 
+                                sessionState.sessionId, sessionState.messageId, error);
+                        return Flux.error(error);
+                    }
+                });
         
-        // 分发标签事件到各个处理器，错误会被外层的重试机制处理
+        // 分发标签事件到各个处理器
         Flux<VoiceStreamEvent> handlerEvents = tagEvents.flatMap(tagEvent -> 
                 eventDispatcher.dispatchEvent(tagEvent, sessionState));
         
@@ -196,6 +211,7 @@ public class StreamingVoiceOrchestrator {
                     // 获取角色卡的开场白
                     String greetingMessage = sessionState.sessionInfo.getCharacterCard().getGreetingMessage();
                     
+                    // 保存到数据库 (PostgreSQL)
                     voiceChatService.saveCompleteRound(
                             sessionState.sessionInfo.getHistoryId(),
                             UUID.fromString(sessionState.sessionId),
@@ -206,8 +222,12 @@ public class StreamingVoiceOrchestrator {
                             greetingMessage
                     );
                     
+                    // 同时保存到Redis缓存供AI上下文使用
+                    chatMemoryService.addUserMessage(sessionState.sessionId, sessionState.getUserMessage());
+                    chatMemoryService.addAssistantMessage(sessionState.sessionId, aiResponse);
+                    
                     sessionState.metrics.mark("history_done");
-                    log.info("完整对话轮次保存成功: sessionId={}, messageId={}, userMsg={}, assistantMsg={}", 
+                    log.info("完整对话轮次保存成功(DB+Redis): sessionId={}, messageId={}, userMsg={}, assistantMsg={}", 
                             sessionState.sessionId, sessionState.messageId, 
                             sessionState.getUserMessage().length(), aiResponse.length());
                 } else {

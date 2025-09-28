@@ -910,6 +910,12 @@ export default {
           case 'ERROR':
             handleError(message)
             break
+          case 'RETRY_FAILED':
+            handleRetryFailed(message)
+            break
+          case 'ROUND_DISCARDED':
+            handleRoundDiscarded(message)
+            break
           case 'TITLE_UPDATE':
             handleTitleUpdate(message)
             break
@@ -948,6 +954,12 @@ export default {
       const { messageId, payload } = message
       console.debug('处理助手文本分段:', { messageId, payload })
       if (!messageId || !payload) return
+      
+      // 检查是否是记忆检索事件
+      if (payload.text && payload.text.includes('[MEMORY_EVENT:')) {
+        handleMemoryEvent(payload.text)
+        return // 不显示这些特殊事件作为对话内容
+      }
       
       const assistantMessage = ensureAssistantMessage(messageId)
       const segmentOrder = Number(payload.segmentOrder ?? 0)
@@ -1271,6 +1283,37 @@ export default {
       }
     }
 
+    // 处理记忆检索事件
+    const handleMemoryEvent = (text) => {
+      console.debug('处理记忆事件:', text)
+      const characterName = selectedCharacter.value?.name || '角色'
+      
+      // 解析 [MEMORY_EVENT:TYPE]内容[/MEMORY_EVENT] 格式
+      const memoryEventMatch = text.match(/\[MEMORY_EVENT:(\w+)\](.+?)\[\/MEMORY_EVENT\]/)
+      if (!memoryEventMatch) {
+        console.warn('无法解析记忆事件格式:', text)
+        return
+      }
+      
+      const [, eventType, eventMessage] = memoryEventMatch
+      
+      switch (eventType) {
+        case 'MEMORY_RETRIEVAL_STARTED':
+          notification.info(`🧠 ${characterName}正在努力回忆...`, {
+            duration: 2000
+          })
+          break
+        case 'MEMORY_RETRIEVAL_COMPLETED':
+          notification.success(`✨ ${characterName}想起来了！`, {
+            duration: 2000
+          })
+          break
+        default:
+          console.warn('未知的记忆事件类型:', eventType)
+          break
+      }
+    }
+
     // 打字机效果实现
     const addTypingEffect = (message, newText) => {
       if (!newText) return
@@ -1310,6 +1353,49 @@ export default {
       isProcessing.value = false
       activeMessageId.value = null
       notification.error(payload?.error || '语音处理失败')
+    }
+
+    const handleRetryFailed = (message) => {
+      const { messageId, payload } = message
+      if (!messageId) return
+      
+      console.warn('重试失败:', payload)
+      
+      const userMessage = userMessages.get(messageId)
+      if (userMessage) {
+        userMessage.text = `重试失败: ${payload?.finalError || '操作多次重试后仍然失败'}`
+        userMessage.status = 'error'
+      }
+      
+      // 显示错误通知
+      notification.error(`操作失败: ${payload?.operation || '语音处理'}重试失败，请重新发送`)
+      
+      isProcessing.value = false
+      activeMessageId.value = null
+    }
+
+    const handleRoundDiscarded = (message) => {
+      const { messageId, payload } = message
+      if (!messageId) return
+      
+      console.warn('对话轮次被丢弃:', payload)
+      
+      // 移除用户消息气泡
+      const userMessage = userMessages.get(messageId)
+      if (userMessage) {
+        userMessages.delete(messageId)
+        // 从messages列表中移除
+        const index = messages.value.findIndex(msg => msg.id === messageId)
+        if (index !== -1) {
+          messages.value.splice(index, 1)
+        }
+      }
+      
+      // 显示错误通知
+      notification.error(`对话处理失败: ${payload?.reason || '多次重试后仍然失败，已丢弃本次对话'}`)
+      
+      isProcessing.value = false
+      activeMessageId.value = null
     }
 
     // 处理标题更新

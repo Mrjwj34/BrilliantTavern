@@ -77,13 +77,22 @@ public class StreamingContentParser {
                     // 处理结束时的缓冲区内容
                     flushBuffer(context);
                     
-                    // 检查是否解析到有效标签
+                    // 检查是否解析到有效标签，但[MEM]标签请求例外
                     if (!context.hasValidTags) {
-                        String errorMsg = String.format("AI响应缺少必需的标签格式。完整内容: %s", 
-                                context.fullContent.toString());
+                        String fullContent = context.fullContent.toString();
+                        
+                        // 如果是[MEM]标签请求，跳过标签格式验证
+                        if (isSingleMemTagContent(fullContent)) {
+                            log.debug("检测到[MEM]标签请求，跳过标签格式验证: sessionId={}, messageId={}", 
+                                    context.sessionId, context.messageId);
+                            sink.complete();
+                            return;
+                        }
+                        
+                        String errorMsg = String.format("AI响应缺少必需的标签格式。完整内容: %s", fullContent);
                         log.warn("标签解析失败: sessionId={}, messageId={}, content={}", 
-                                context.sessionId, context.messageId, context.fullContent.toString());
-                        sink.error(new TagParsingException(errorMsg, context.fullContent.toString()));
+                                context.sessionId, context.messageId, fullContent);
+                        sink.error(new TagParsingException(errorMsg, fullContent));
                         return;
                     }
                     
@@ -332,6 +341,34 @@ public class StreamingContentParser {
             this.isOpen = isOpen;
             this.language = language;
         }
+    }
+    
+    /**
+     * 检测是否为单个[MEM]标签内容
+     */
+    private boolean isSingleMemTagContent(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return false;
+        }
+        
+        String trimmed = content.trim();
+        
+        // 检查是否以[MEM]开头且包含结束标签
+        if (trimmed.startsWith("[MEM]") && trimmed.contains("[/MEM]")) {
+            // 确保不包含其他标准标签 (TSS, SUB, ASR, DO)
+            boolean hasOtherTags = trimmed.contains("[TSS:") || 
+                                 trimmed.contains("[SUB:") || 
+                                 trimmed.contains("[ASR]") ||
+                                 trimmed.contains("[DO]");
+            
+            // 检测是否有重复的[MEM]标签（表示格式错误）
+            int memCount = (trimmed.length() - trimmed.replace("[MEM]", "").length()) / 5; // "[MEM]"长度为5
+            boolean hasRepeatedMemTags = memCount > 1;
+            
+            return !hasOtherTags && !hasRepeatedMemTags;
+        }
+        
+        return false;
     }
     
     /**

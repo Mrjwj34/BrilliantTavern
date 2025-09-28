@@ -20,13 +20,15 @@ public class VoiceStreamEvent {
         AUDIO_CHUNK,
         ROUND_COMPLETED,
         PROCESSING_COMPLETED,
-        SUBTITLE_STREAM,      // 字幕流式推送
-        METHOD_EXECUTION,     // 方法执行
+        SUBTITLE_STREAM,          // 字幕流式推送
+        METHOD_EXECUTION,         // 方法执行
         ERROR,
-        RETRY_STARTED,        // 重试开始
-        RETRY_PROGRESS,       // 重试进度
-        RETRY_FAILED,         // 重试失败（单次）
-        ROUND_DISCARDED       // 对话轮次被丢弃
+        RETRY_STARTED,            // 重试开始
+        RETRY_PROGRESS,           // 重试进度
+        RETRY_FAILED,             // 重试失败（单次）
+        ROUND_DISCARDED,          // 对话轮次被丢弃
+        MEMORY_RETRIEVAL_STARTED, // 记忆检索开始
+        MEMORY_RETRIEVAL_COMPLETED // 记忆检索完成
     }
 
     Type type;

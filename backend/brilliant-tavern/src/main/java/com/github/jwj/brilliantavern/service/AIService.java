@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.service;
 import com.github.jwj.brilliantavern.config.GenAIConfig;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
+import com.github.jwj.brilliantavern.entity.CharacterMemory;
 import com.google.genai.Client;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
@@ -22,6 +23,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * AI服务类，负责与Google Gen AI集成处理语音对话
@@ -35,6 +39,7 @@ public class AIService {
     private final Client genAIClient;
     private final GenAIConfig genAIConfig;
     private final ChatMemoryService chatMemoryService;
+    private final CharacterMemoryService characterMemoryService;
     private final com.github.jwj.brilliantavern.service.streaming.RetryService retryService;
     
     @Value("classpath:prompts/character-chat-template.st")
@@ -46,7 +51,8 @@ public class AIService {
     public Flux<AIStreamEvent> streamVoiceConversation(VoiceMessage voiceMessage,
                                                        CharacterCard characterCard,
                                                        String conversationId,
-                                                       String messageId) {
+                                                       String messageId,
+                                                       UUID userId) {
         return Flux.defer(() -> {
             try {
                 if (voiceMessage.getAudioData() == null || voiceMessage.getAudioData().length == 0) {
@@ -69,7 +75,7 @@ public class AIService {
                 }
 
                 // 使用Gen AI处理消息
-                return processWithGenAI(historyMessages, voiceMessage, conversationId, messageId)
+                return processWithGenAI(historyMessages, voiceMessage, conversationId, messageId, characterCard, userId)
                         .doOnError(error -> log.error("AI处理语音消息失败", error));
             } catch (Exception e) {
                 log.error("处理语音消息失败", e);
@@ -84,9 +90,11 @@ public class AIService {
     private Flux<AIStreamEvent> processWithGenAI(List<Content> historyMessages,
                                                  VoiceMessage voiceMessage,
                                                  String conversationId,
-                                                 String messageId) {
+                                                 String messageId,
+                                                 CharacterCard characterCard,
+                                                 UUID userId) {
         return retryService.retryWithProgress(
-                createGenAIStream(historyMessages, voiceMessage, conversationId, messageId),
+                createGenAIStream(historyMessages, voiceMessage, conversationId, messageId, characterCard, userId),
                 conversationId,
                 messageId,
                 "LLM调用",
@@ -100,7 +108,9 @@ public class AIService {
     private Flux<AIStreamEvent> createGenAIStream(List<Content> historyMessages,
                                                  VoiceMessage voiceMessage,
                                                  String conversationId,
-                                                 String messageId) {
+                                                 String messageId,
+                                                 CharacterCard characterCard,
+                                                 UUID userId) {
         return Flux.<AIStreamEvent>create(sink -> {
                     try {
                         // 构建请求内容
@@ -116,6 +126,7 @@ public class AIService {
                         GenerateContentConfig config = createGenerateContentConfig();
 
                         StringBuilder fullResponse = new StringBuilder();
+                        boolean isMemoryRetrievalRequest = false;
 
                         // 使用真流式API
                         var responseStream = genAIClient.models.generateContentStream(
@@ -130,15 +141,33 @@ public class AIService {
                                 String text = response.text();
                                 if (StringUtils.hasText(text)) {
                                     fullResponse.append(text);
-                                    sink.next(AIStreamEvent.chunk(messageId, text));
+                                    
+                                    // 检测是否为单个[MEM]标签的记忆检索请求
+                                    if (!isMemoryRetrievalRequest && isSingleMemTagRetrieval(fullResponse.toString())) {
+                                        isMemoryRetrievalRequest = true;
+                                        log.debug("检测到记忆检索请求: {}", fullResponse.toString());
+                                        continue; // 不发送chunk事件，等待完整响应
+                                    }
+                                    
+                                    // 如果不是记忆检索请求，正常发送chunk
+                                    if (!isMemoryRetrievalRequest) {
+                                        sink.next(AIStreamEvent.chunk(messageId, text));
+                                    }
                                 }
                             }
                         }
                         
-                        // 直接发送完成事件，标签解析已在流式过程中完成
-                        ProcessedAiResponse processed = new ProcessedAiResponse(fullResponse.toString(), null);
-                        sink.next(AIStreamEvent.completed(messageId, processed));
-                        sink.complete();
+                        String finalResponse = fullResponse.toString();
+                        
+                        // 如果是记忆检索请求，执行检索并模拟对话轮次
+                        if (isMemoryRetrievalRequest) {
+                            handleMemoryRetrieval(finalResponse, conversationId, characterCard, userId, sink, messageId, voiceMessage);
+                        } else {
+                            // 正常完成流程
+                            ProcessedAiResponse processed = new ProcessedAiResponse(finalResponse, null);
+                            sink.next(AIStreamEvent.completed(messageId, processed));
+                            sink.complete();
+                        }
 
                     } catch (Exception e) {
                         sink.error(e);
@@ -263,11 +292,11 @@ public class AIService {
             String template = promptTemplate.getContentAsString(StandardCharsets.UTF_8);
             
             // 优先使用语音消息中的语言设置，如果没有则使用角色卡默认设置
-            String voiceLanguage = voiceMessage.getVoiceLanguage() != null ? 
+            String voiceLanguage = (voiceMessage != null && voiceMessage.getVoiceLanguage() != null) ? 
                 voiceMessage.getVoiceLanguage() : 
                 (characterCard.getVoiceLanguage() != null ? characterCard.getVoiceLanguage() : "zh");
                 
-            String subtitleLanguage = voiceMessage.getSubtitleLanguage() != null ? 
+            String subtitleLanguage = (voiceMessage != null && voiceMessage.getSubtitleLanguage() != null) ? 
                 voiceMessage.getSubtitleLanguage() : 
                 (characterCard.getSubtitleLanguage() != null ? characterCard.getSubtitleLanguage() : "zh");
             
@@ -287,27 +316,7 @@ public class AIService {
             throw new RuntimeException("无法构建系统提示词", e);
         }
     }
-    
-    // 保留原有方法以兼容性（如果其他地方有调用）
-    public String buildSystemPrompt(CharacterCard characterCard) {
-        try {
-            String template = promptTemplate.getContentAsString(StandardCharsets.UTF_8);
-            
-            // 手动替换占位符
-            return template
-                    .replace("{character_name}", characterCard.getName())
-                    .replace("{character_description}", getCharacterDescription(characterCard))
-                    .replace("{character_personality}", getCharacterPersonality(characterCard))
-                    .replace("{character_style}", getCharacterStyle(characterCard))
-                    .replace("{voice_language}", characterCard.getVoiceLanguage() != null ? characterCard.getVoiceLanguage() : "zh")
-                    .replace("{subtitle_language}", characterCard.getSubtitleLanguage() != null ? characterCard.getSubtitleLanguage() : "zh");
-            
-        } catch (IOException e) {
-            log.error("读取提示词模板失败", e);
-            throw new RuntimeException("无法构建系统提示词", e);
-        }
-    }
-    
+
     /**
      * 获取角色描述
      */
@@ -404,5 +413,211 @@ public class AIService {
             log.error("生成简单文本失败: prompt={}", prompt, e);
             return null;
         }
+    }
+    
+    /**
+     * 检测是否为单个[MEM]标签的记忆检索请求
+     */
+    private boolean isSingleMemTagRetrieval(String response) {
+        if (!StringUtils.hasText(response)) {
+            return false;
+        }
+        
+        String trimmed = response.trim();
+        
+        // 检查是否以[MEM]开头且包含结束标签
+        if (trimmed.startsWith("[MEM]") && trimmed.contains("[/MEM]")) {
+            // 确保不包含其他标签 (TSS, SUB, ASR, DO)
+            boolean hasOtherTags = trimmed.contains("[TSS:") || 
+                                 trimmed.contains("[SUB:") || 
+                                 trimmed.contains("[ASR]") ||
+                                 trimmed.contains("[DO]");
+            
+            // 检测是否有重复的[MEM]标签（表示格式错误）
+            int memCount = (trimmed.length() - trimmed.replace("[MEM]", "").length()) / 5; // "[MEM]"长度为5
+            boolean hasRepeatedMemTags = memCount > 1;
+            
+            if (hasRepeatedMemTags) {
+                log.warn("检测到重复的[MEM]标签，将作为格式错误处理: {}", trimmed);
+                return false; // 当作格式错误，不进入记忆检索流程
+            }
+            
+            return !hasOtherTags;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 处理记忆检索逻辑
+     */
+    private void handleMemoryRetrieval(String memTagResponse, String conversationId, 
+                                     CharacterCard characterCard, UUID userId,
+                                     reactor.core.publisher.FluxSink<AIStreamEvent> sink, String messageId,
+                                     VoiceMessage originalVoiceMessage) {
+        try {
+            log.debug("开始处理记忆检索: {}", memTagResponse);
+            
+            log.debug("开始记忆检索流程");
+            
+            // 解析[MEM]标签中的查询文本
+            String queryText = extractQueryFromMemTag(memTagResponse);
+            if (queryText == null) {
+                log.warn("无法解析MEM标签中的查询文本: {}", memTagResponse);
+                sink.error(new RuntimeException("无法解析记忆检索查询"));
+                return;
+            }
+            
+            // 执行记忆检索
+            String retrievalResult = executeMemoryRetrieval(queryText, characterCard, userId);
+            
+            // 模拟虚拟对话轮次 - 添加到对话历史但不入库
+            addVirtualConversationRound(conversationId, queryText, retrievalResult);
+            
+            log.debug("记忆检索完成，准备生成正常回复");
+            
+            // 继续正常的AI对话流程 - 重新调用AI生成真正的回复
+            continueNormalConversation(conversationId, characterCard, userId, sink, messageId, originalVoiceMessage);
+            
+        } catch (Exception e) {
+            log.error("记忆检索处理失败", e);
+            sink.error(e);
+        }
+    }
+    
+    /**
+     * 从[MEM]标签中提取查询文本
+     */
+    private String extractQueryFromMemTag(String memTagResponse) {
+        Pattern pattern = Pattern.compile("\\[MEM\\](.+?)\\[/MEM\\]", Pattern.DOTALL);
+        Matcher matcher = pattern.matcher(memTagResponse);
+        
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return null;
+    }
+    
+    /**
+     * 执行记忆检索
+     */
+    private String executeMemoryRetrieval(String queryText, CharacterCard characterCard, UUID userId) {
+        try {
+            UUID characterCardId = characterCard.getId();
+            
+            log.debug("执行记忆检索: userId={}, characterCardId={}, query={}", userId, characterCardId, queryText);
+            
+            // 调用记忆服务检索相似记忆
+            List<CharacterMemory> memories = characterMemoryService.retrieveSimilarMemories(userId, characterCardId, queryText, 3);
+            
+            if (memories.isEmpty()) {
+                return "没有找到相关的记忆。";
+            }
+            
+            // 格式化检索结果
+            StringBuilder result = new StringBuilder("检索到以下相关记忆:\n");
+            for (int i = 0; i < memories.size(); i++) {
+                result.append(String.format("%d. %s\n", i + 1, memories.get(i).getMemoryContent()));
+            }
+            
+            return result.toString();
+            
+        } catch (Exception e) {
+            log.error("执行记忆检索失败: {}", queryText, e);
+            return "记忆检索失败: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * 添加虚拟对话轮次到对话历史（不入库）
+     */
+    private void addVirtualConversationRound(String conversationId, String queryText, String result) {
+        try {
+            // 创建更自然的对话格式，作为上下文参考
+            // 模拟AI内部记忆检索过程
+            Content internalQuery = Content.fromParts(Part.fromText("(内部记忆检索: " + queryText + ")"));
+            
+            // 检索结果作为内部知识
+            String memoryContext = result.isEmpty() ? "(没有找到相关记忆)" : "(记忆内容: " + result + ")";
+            Content memoryResponse = Content.fromParts(Part.fromText(memoryContext));
+            
+            // 添加到对话历史但不持久化到数据库
+            chatMemoryService.addVirtualMessageToHistory(conversationId, memoryResponse, internalQuery);
+            
+            log.debug("添加虚拟记忆上下文成功: conversationId={}, query={}", conversationId, queryText);
+            
+        } catch (Exception e) {
+            log.error("添加虚拟对话轮次失败: conversationId={}", conversationId, e);
+        }
+    }
+    
+    /**
+     * 继续正常的AI对话流程
+     */
+    private void continueNormalConversation(String conversationId, 
+                                          CharacterCard characterCard, 
+                                          UUID userId,
+                                          reactor.core.publisher.FluxSink<AIStreamEvent> sink, 
+                                          String messageId,
+                                          VoiceMessage originalVoiceMessage) {
+        try {
+            // 重新获取包含虚拟对话的历史记录
+            List<Content> updatedHistory = chatMemoryService.getHistory(conversationId);
+            
+            // 添加系统指令
+            String systemPrompt = buildSystemPrompt(characterCard, originalVoiceMessage);
+            if (StringUtils.hasText(systemPrompt)) {
+                Content systemContent = Content.fromParts(Part.fromText(systemPrompt));
+                updatedHistory.add(0, systemContent);
+            }
+            
+            // 重新添加原始音频内容到请求中
+            Content audioContent = buildAudioContent(originalVoiceMessage);
+            updatedHistory.add(audioContent);
+            
+            GenerateContentConfig config = createGenerateContentConfig();
+            StringBuilder fullResponse = new StringBuilder();
+            
+            var responseStream = genAIClient.models.generateContentStream(
+                genAIConfig.getVertexAi().getModel(),
+                updatedHistory,
+                config
+            );
+            
+            try (responseStream) {
+                for (GenerateContentResponse response : responseStream) {
+                    String text = response.text();
+                    if (StringUtils.hasText(text)) {
+                        fullResponse.append(text);
+                        sink.next(AIStreamEvent.chunk(messageId, text));
+                    }
+                }
+            }
+            
+            ProcessedAiResponse processed = new ProcessedAiResponse(fullResponse.toString(), null);
+            sink.next(AIStreamEvent.completed(messageId, processed));
+            
+            // 清除虚拟消息缓存，避免影响后续对话
+            chatMemoryService.clearVirtualHistory(conversationId);
+            log.debug("已清除虚拟记忆上下文: conversationId={}", conversationId);
+            
+            sink.complete();
+            
+        } catch (Exception e) {
+            log.error("继续正常对话失败", e);
+            sink.error(e);
+        }
+    }
+    
+    /**
+     * 创建记忆检索事件 - 使用专门的事件类型，不通过CHUNK发送
+     */
+    private AIStreamEvent createMemoryRetrievalEvent(String messageId, String eventType, String message) {
+        // 创建一个特殊的完成事件，包含记忆检索信息
+        ProcessedAiResponse memoryEventResponse = new ProcessedAiResponse(
+            String.format("[MEMORY_EVENT:%s]%s[/MEMORY_EVENT]", eventType, message), 
+            null
+        );
+        return new AIStreamEvent(AIStreamEvent.Type.COMPLETED, messageId, null, memoryEventResponse);
     }
 }

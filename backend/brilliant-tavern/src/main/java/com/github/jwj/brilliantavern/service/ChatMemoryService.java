@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * 对话记忆管理服务，使用Redis存储对话历史
@@ -26,6 +28,9 @@ public class ChatMemoryService {
     
     private static final String CHAT_HISTORY_PREFIX = "chat:history:";
     private static final long DEFAULT_EXPIRE_MINUTES = 120; // 2小时过期
+    
+    // 临时存储虚拟消息，不持久化到Redis
+    private final Map<String, List<Content>> virtualHistoryCache = new ConcurrentHashMap<>();
 
     /**
      * 简化的消息类，用于序列化
@@ -59,7 +64,7 @@ public class ChatMemoryService {
     }
 
     /**
-     * 获取对话历史
+     * 获取对话历史（包含虚拟消息）
      */
     public List<Content> getHistory(String conversationId) {
         String key = CHAT_HISTORY_PREFIX + conversationId;
@@ -79,6 +84,13 @@ public class ChatMemoryService {
             } catch (Exception e) {
                 log.error("解析对话历史失败: conversationId={}", conversationId, e);
             }
+        }
+        
+        // 添加虚拟消息（如果有）
+        List<Content> virtualMessages = virtualHistoryCache.get(conversationId);
+        if (virtualMessages != null && !virtualMessages.isEmpty()) {
+            history.addAll(virtualMessages);
+            log.debug("添加虚拟消息到历史: conversationId={}, 虚拟消息数={}", conversationId, virtualMessages.size());
         }
         
         log.debug("获取对话历史: conversationId={}, 消息数量={}", conversationId, history.size());
@@ -152,5 +164,32 @@ public class ChatMemoryService {
                 log.error("限制对话历史失败: conversationId={}", conversationId, e);
             }
         }
+    }
+    
+    /**
+     * 添加虚拟消息到对话历史（不持久化）
+     */
+    public void addVirtualMessageToHistory(String conversationId, Content aiMessage, Content userMessage) {
+        List<Content> virtualMessages = virtualHistoryCache.computeIfAbsent(conversationId, k -> new ArrayList<>());
+        virtualMessages.add(aiMessage);
+        virtualMessages.add(userMessage);
+        
+        log.debug("添加虚拟消息到缓存: conversationId={}, 当前虚拟消息数={}", conversationId, virtualMessages.size());
+    }
+    
+    /**
+     * 清除虚拟消息缓存
+     */
+    public void clearVirtualHistory(String conversationId) {
+        virtualHistoryCache.remove(conversationId);
+        log.debug("清除虚拟消息缓存: conversationId={}", conversationId);
+    }
+    
+    /**
+     * 清除所有虚拟消息缓存
+     */
+    public void clearAllVirtualHistory() {
+        virtualHistoryCache.clear();
+        log.debug("清除所有虚拟消息缓存");
     }
 }
