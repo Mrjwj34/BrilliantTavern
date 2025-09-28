@@ -106,6 +106,35 @@
             <div class="bubble" :class="{ typing: message.isTyping }">
               <p v-if="message.status === 'error'" class="error-text">{{ message.text }}</p>
               <p v-else>{{ message.text }}</p>
+              
+              <!-- 图像显示区域 -->
+              <div v-if="message.images && message.images.length" class="image-gallery">
+                <div 
+                  v-for="image in message.images" 
+                  :key="image.id" 
+                  class="image-container"
+                  :class="{ 'self-portrait': image.isSelf }"
+                >
+                  <div v-if="image.status === 'generating'" class="image-placeholder">
+                    <div class="loading-spinner"></div>
+                    <p class="loading-text">{{ image.isSelf ? '正在绘制自画像...' : '正在生成图像...' }}</p>
+                    <p class="description">{{ image.description }}</p>
+                  </div>
+                  <div v-else-if="image.status === 'completed'" class="generated-image">
+                    <img 
+                      :src="image.imageUri" 
+                      :alt="image.description"
+                      class="ai-generated-img"
+                      @click="viewImageFullscreen(image)"
+                    />
+                    <div class="image-caption">
+                      <span class="image-type">{{ image.isSelf ? '🎭 自画像' : '🎨 创作' }}</span>
+                      <span class="image-desc">{{ image.description }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
               <div v-if="message.audioSegments && message.audioSegments.length" class="audio-segments">
                 <button
                   v-if="message.audioSegments.length === 1"
@@ -1194,6 +1223,53 @@ export default {
         console.warn('手动播放失败', error)
       })
     }
+    
+    // 查看图像全屏
+    const viewImageFullscreen = (image) => {
+      // 简单的全屏查看实现
+      const modal = document.createElement('div')
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        cursor: pointer;
+      `
+      
+      const img = document.createElement('img')
+      img.src = image.imageUri
+      img.alt = image.description
+      img.style.cssText = `
+        max-width: 90%;
+        max-height: 90%;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      `
+      
+      modal.appendChild(img)
+      document.body.appendChild(modal)
+      
+      // 点击关闭
+      modal.addEventListener('click', () => {
+        document.body.removeChild(modal)
+      })
+      
+      // ESC键关闭
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          document.body.removeChild(modal)
+          document.removeEventListener('keydown', handleKeyDown)
+        }
+      }
+      document.addEventListener('keydown', handleKeyDown)
+    }
 
     const handleAsrResult = (message) => {
       const { messageId, payload } = message
@@ -1261,6 +1337,9 @@ export default {
         if (result.methodName === 'remember' || result.methodName === '记住') {
           const errorContent = payload.error || '记忆存储失败'
           notification.warning(errorContent)
+        } else if (result.methodName === 'imagen' || result.methodName === '生成图片' || result.methodName === '生图') {
+          const errorContent = payload.error || '图像生成失败'
+          notification.error(errorContent)
         }
         // 未知方法的错误直接忽略，不显示弹窗
       } else if (payload.action === 'method_executed') {
@@ -1286,6 +1365,12 @@ export default {
           notification.success(randomMessage)
         }
         // 未识别的方法直接忽略，不显示任何弹窗
+      } else if (payload.action === 'image_generation_started') {
+        // 图像生成开始
+        handleImageGenerationStarted(message)
+      } else if (payload.action === 'image_generation_completed') {
+        // 图像生成完成
+        handleImageGenerationCompleted(message)
       }
     }
 
@@ -1325,6 +1410,100 @@ export default {
       
       const randomMessage = completedMessages[Math.floor(Math.random() * completedMessages.length)]
       notification.success(randomMessage)
+    }
+
+    // 处理图像生成开始事件
+    const handleImageGenerationStarted = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理图像生成开始:', { messageId, payload })
+      
+      const characterName = selectedCharacter.value?.name || '角色'
+      const isSelf = payload.isSelf
+      const description = payload.description
+      
+      // 显示图像生成开始提示
+      const startMessages = isSelf ? [
+        `🎨 ${characterName}正在画自己的肖像...`,
+        `🖼️ ${characterName}准备展示自己的样子...`,
+        `✨ ${characterName}正在创作自画像...`,
+        `🎭 ${characterName}要展现${description}的表情...`
+      ] : [
+        `🎨 ${characterName}正在创作图像...`,
+        `🖼️ ${characterName}开始画画了...`,
+        `✨ ${characterName}的创意正在形成...`,
+        `🖌️ ${characterName}正在描绘：${description.substring(0, 20)}...`
+      ]
+      
+      const randomMessage = startMessages[Math.floor(Math.random() * startMessages.length)]
+      notification.info(randomMessage)
+      
+      // 在对话中添加生成中的图像占位符
+      addImagePlaceholder(messageId, isSelf, description)
+    }
+    
+    // 处理图像生成完成事件
+    const handleImageGenerationCompleted = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理图像生成完成:', { messageId, payload })
+      
+      const characterName = selectedCharacter.value?.name || '角色'
+      const result = payload.result
+      
+      // 显示图像生成完成提示
+      const completedMessages = [
+        `🎉 ${characterName}完成了创作！`,
+        `✨ ${characterName}的作品诞生了！`,
+        `🖼️ ${characterName}展示了精彩的图像！`,
+        `🎨 ${characterName}的艺术天赋展现无遗！`
+      ]
+      
+      const randomMessage = completedMessages[Math.floor(Math.random() * completedMessages.length)]
+      notification.success(randomMessage)
+      
+      // 更新对话中的图像
+      updateImageInMessage(messageId, result)
+    }
+    
+    // 添加图像占位符到对话
+    const addImagePlaceholder = (messageId, isSelf, description) => {
+      // 确保有对应的助手消息
+      const assistantMessage = ensureAssistantMessage(messageId)
+      
+      // 添加图像占位符
+      if (!assistantMessage.images) {
+        assistantMessage.images = []
+      }
+      
+      assistantMessage.images.push({
+        id: `${messageId}-image-${Date.now()}`,
+        status: 'generating',
+        isSelf: isSelf,
+        description: description,
+        imageUri: null
+      })
+      
+      // 更新消息
+      updateMessages()
+    }
+    
+    // 更新消息中的图像
+    const updateImageInMessage = (messageId, result) => {
+      const assistantMessage = assistantMessages.get(messageId)
+      if (assistantMessage && assistantMessage.images) {
+        // 找到对应的图像占位符并更新
+        const imageIndex = assistantMessage.images.findIndex(img => img.status === 'generating')
+        if (imageIndex !== -1) {
+          assistantMessage.images[imageIndex] = {
+            ...assistantMessage.images[imageIndex],
+            status: 'completed',
+            imageUri: result.imageUri,
+            isSelf: result.isSelf
+          }
+          
+          // 更新消息
+          updateMessages()
+        }
+      }
     }
 
     // 处理其他事件
@@ -1557,6 +1736,7 @@ export default {
       canRecord,
       toggleRecording,
       playSegment,
+      viewImageFullscreen,
       
       // 其他
       formatTime,
@@ -2040,6 +2220,122 @@ export default {
       background: rgba(99, 102, 241, 0.2);
     }
   }
+}
+
+.image-gallery {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  .image-container {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 2px solid var(--border-light);
+    transition: border-color 0.3s ease, transform 0.2s ease;
+
+    &.self-portrait {
+      border-color: #f59e0b;
+      background: linear-gradient(135deg, #fef3c7, #fde68a);
+    }
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .image-placeholder {
+      padding: 2rem;
+      text-align: center;
+      background: linear-gradient(135deg, #f3f4f6, #e5e7eb);
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #e5e7eb;
+        border-top: 4px solid #6366f1;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      .loading-text {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+      }
+
+      .description {
+        font-size: 0.875rem;
+        color: #9ca3af;
+        font-style: italic;
+        max-width: 300px;
+        word-wrap: break-word;
+      }
+    }
+
+    .generated-image {
+      position: relative;
+
+      .ai-generated-img {
+        width: 100%;
+        height: auto;
+        max-height: 400px;
+        object-fit: cover;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+
+        &:hover {
+          transform: scale(1.02);
+        }
+      }
+
+      .image-caption {
+        padding: 0.75rem;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(8px);
+        border-top: 1px solid var(--border-light);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+
+        .image-type {
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #6366f1;
+          background: rgba(99, 102, 241, 0.1);
+          padding: 0.25rem 0.5rem;
+          border-radius: 6px;
+          white-space: nowrap;
+        }
+
+        .image-desc {
+          font-size: 0.875rem;
+          color: #6b7280;
+          flex: 1;
+          text-align: right;
+          font-style: italic;
+          word-wrap: break-word;
+          overflow: hidden;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+        }
+      }
+    }
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .chat-controls {

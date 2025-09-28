@@ -2,6 +2,7 @@ package com.github.jwj.brilliantavern.service.streaming.handlers;
 
 import com.github.jwj.brilliantavern.dto.voice.VoiceStreamEvent;
 import com.github.jwj.brilliantavern.service.CharacterMemoryService;
+import com.github.jwj.brilliantavern.service.ImageGenerationService;
 import com.github.jwj.brilliantavern.service.streaming.StreamingVoiceOrchestrator;
 import com.github.jwj.brilliantavern.service.streaming.TagEvent;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class MethodExecutionHandler implements EventHandler {
     private final Map<String, MethodContext> methodContexts = new java.util.concurrent.ConcurrentHashMap<>();
     
     private final CharacterMemoryService characterMemoryService;
+    private final ImageGenerationService imageGenerationService;
 
     @Override
     public boolean canHandle(TagEvent tagEvent) {
@@ -173,6 +175,7 @@ public class MethodExecutionHandler implements EventHandler {
         
         return switch (methodName) {
             case "remember", "记住" -> executeRememberMethod(tagEvent, methodCall.params, sessionState);
+            case "imagen", "生成图片", "生图" -> executeImagenMethod(tagEvent, methodCall.params, sessionState);
             // 可以在这里添加更多方法
             default -> {
                 log.warn("未知的方法: {}", methodCall.methodName);
@@ -230,6 +233,86 @@ public class MethodExecutionHandler implements EventHandler {
         })
         .subscribeOn(Schedulers.boundedElastic())
         .flux();
+    }
+    
+    /**
+     * 执行图像生成方法
+     */
+    private Flux<VoiceStreamEvent> executeImagenMethod(TagEvent tagEvent, String[] params, 
+                                                      StreamingVoiceOrchestrator.SessionState sessionState) {
+        if (params.length < 2) {
+            log.warn("imagen方法参数不足: sessionId={}, messageId={}, params={}", 
+                    tagEvent.getSessionId(), tagEvent.getMessageId(), String.join(", ", params));
+            return Flux.just(buildMethodErrorEvent(tagEvent, "imagen方法需要2个参数: isSelf(boolean), description(string)"));
+        }
+
+        try {
+            // 解析参数
+            boolean isSelf = Boolean.parseBoolean(params[0].toLowerCase());
+            String description = params[1];
+            
+            // 发送图像生成开始事件
+            VoiceStreamEvent startEvent = buildImageGenerationStartEvent(tagEvent, isSelf, description);
+            
+            // 异步执行图像生成
+            return Flux.concat(
+                Flux.just(startEvent),
+                imageGenerationService.generateImageAsync(
+                    sessionState.getSessionInfo().getUserId(),
+                    sessionState.getSessionInfo().getCharacterCard(),
+                    isSelf,
+                    description,
+                    tagEvent.getSessionId(),
+                    tagEvent.getMessageId()
+                ).map(result -> buildImageGenerationResultEvent(tagEvent, result))
+                .onErrorReturn(buildMethodErrorEvent(tagEvent, "图像生成失败"))
+            );
+            
+        } catch (Exception e) {
+            log.error("imagen方法参数解析失败: sessionId={}, messageId={}", 
+                    tagEvent.getSessionId(), tagEvent.getMessageId(), e);
+            return Flux.just(buildMethodErrorEvent(tagEvent, "imagen方法参数格式错误: " + e.getMessage()));
+        }
+    }
+    
+    /**
+     * 构建图像生成开始事件
+     */
+    private VoiceStreamEvent buildImageGenerationStartEvent(TagEvent tagEvent, boolean isSelf, String description) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", "image_generation_started");
+        payload.put("isSelf", isSelf);
+        payload.put("description", description);
+        
+        return VoiceStreamEvent.builder()
+                .type(VoiceStreamEvent.Type.METHOD_EXECUTION)
+                .sessionId(tagEvent.getSessionId())
+                .messageId(tagEvent.getMessageId())
+                .timestamp(Instant.now().toEpochMilli())
+                .payload(payload)
+                .build();
+    }
+    
+    /**
+     * 构建图像生成结果事件
+     */
+    private VoiceStreamEvent buildImageGenerationResultEvent(TagEvent tagEvent, ImageGenerationService.ImageGenerationResult result) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", "image_generation_completed");
+        payload.put("result", Map.of(
+                "imageUri", result.imageUri(),
+                "description", result.description(),
+                "isSelf", result.isSelf(),
+                "status", "success"
+        ));
+        
+        return VoiceStreamEvent.builder()
+                .type(VoiceStreamEvent.Type.METHOD_EXECUTION)
+                .sessionId(tagEvent.getSessionId())
+                .messageId(tagEvent.getMessageId())
+                .timestamp(Instant.now().toEpochMilli())
+                .payload(payload)
+                .build();
     }
 
     private VoiceStreamEvent buildMethodResultEvent(TagEvent tagEvent, Map<String, Object> result) {

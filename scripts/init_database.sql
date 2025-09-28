@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS chat_history (
     content TEXT NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     title VARCHAR(255),
+    attachments TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (card_id) REFERENCES character_cards(id) ON DELETE CASCADE
 );

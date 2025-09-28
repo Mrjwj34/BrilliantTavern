@@ -1,5 +1,7 @@
 package com.github.jwj.brilliantavern.service.streaming;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.jwj.brilliantavern.dto.VoiceMessage;
 import com.github.jwj.brilliantavern.dto.voice.VoiceStreamEvent;
 import com.github.jwj.brilliantavern.entity.ChatHistory;
@@ -17,8 +19,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -36,6 +37,7 @@ public class StreamingVoiceOrchestrator {
     private final StreamingContentParser contentParser;
     private final AsyncEventDispatcher eventDispatcher;
     private final RetryService retryService;
+    private final ObjectMapper objectMapper;
     
     // 会话状态管理
     private final Map<String, SessionState> sessionStates = new ConcurrentHashMap<>();
@@ -168,7 +170,17 @@ public class StreamingVoiceOrchestrator {
                                event.getType() == AIService.AIStreamEvent.Type.MEMORY_RETRIEVAL_COMPLETED)
                 .map(aiEvent -> handleMemoryRetrievalEvent(aiEvent, sessionState));
         
-        return Flux.merge(handlerEvents, completionEvents, memoryEvents);
+        // 监听图像生成完成事件，收集图像信息
+        Flux<VoiceStreamEvent> imageCollectionEvents = handlerEvents
+                .filter(event -> event.getType() == VoiceStreamEvent.Type.METHOD_EXECUTION)
+                .doOnNext(event -> {
+                    Map<String, Object> payload = event.getPayload();
+                    if (payload != null && "image_generation_completed".equals(payload.get("action"))) {
+                        collectImageAttachment(event, sessionState);
+                    }
+                });
+        
+        return Flux.merge(handlerEvents, completionEvents, memoryEvents, imageCollectionEvents);
     }
     
     /**
@@ -194,6 +206,37 @@ public class StreamingVoiceOrchestrator {
                         "action", eventType == VoiceStreamEvent.Type.MEMORY_RETRIEVAL_STARTED ? "memory_started" : "memory_completed"
                 ))
                 .build();
+    }
+    
+    /**
+     * 收集图像附件信息
+     */
+    private void collectImageAttachment(VoiceStreamEvent event, SessionState sessionState) {
+        try {
+            Map<String, Object> payload = event.getPayload();
+            Map<String, Object> result = (Map<String, Object>) payload.get("result");
+            
+            if (result != null) {
+                String imageUri = (String) result.get("imageUri");
+                String description = (String) result.get("description");
+                Boolean isSelf = (Boolean) result.get("isSelf");
+                
+                if (imageUri != null) {
+                    ImageAttachment attachment = new ImageAttachment(
+                            imageUri,
+                            description != null ? description : "",
+                            isSelf != null ? isSelf : false
+                    );
+                    
+                    sessionState.getGeneratedImages().add(attachment);
+                    log.debug("收集图像附件: sessionId={}, messageId={}, imageUri={}", 
+                            sessionState.sessionId, sessionState.messageId, imageUri);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("收集图像附件信息失败: sessionId={}, messageId={}", 
+                    sessionState.sessionId, sessionState.messageId, e);
+        }
     }
     
     /**
@@ -242,6 +285,18 @@ public class StreamingVoiceOrchestrator {
                     // 获取角色卡的开场白
                     String greetingMessage = sessionState.sessionInfo.getCharacterCard().getGreetingMessage();
                     
+                    // 序列化图像附件信息
+                    String attachmentsJson = null;
+                    if (!sessionState.getGeneratedImages().isEmpty()) {
+                        try {
+                            Map<String, Object> attachmentsData = Map.of("images", sessionState.getGeneratedImages());
+                            attachmentsJson = objectMapper.writeValueAsString(attachmentsData);
+                        } catch (JsonProcessingException e) {
+                            log.warn("序列化图像附件信息失败: sessionId={}, messageId={}", 
+                                    sessionState.sessionId, sessionState.messageId, e);
+                        }
+                    }
+                    
                     // 保存到数据库 (PostgreSQL)
                     voiceChatService.saveCompleteRound(
                             sessionState.sessionInfo.getHistoryId(),
@@ -250,7 +305,8 @@ public class StreamingVoiceOrchestrator {
                             sessionState.sessionInfo.getCharacterCardId(),
                             sessionState.getUserMessage(),
                             aiResponse,
-                            greetingMessage
+                            greetingMessage,
+                            attachmentsJson
                     );
                     
                     // 同时保存到Redis缓存供AI上下文使用
@@ -330,5 +386,16 @@ public class StreamingVoiceOrchestrator {
         // 新增：收集本轮对话数据
         private String userMessage; // 用户消息（转写结果）
         private String assistantMessage; // AI回复
+        @lombok.Builder.Default
+        private List<ImageAttachment> generatedImages = new ArrayList<>(); // 生成的图片
     }
+    
+    /**
+     * 图像附件记录
+     */
+    public record ImageAttachment(
+            String uri,
+            String description,
+            boolean isSelf
+    ) {}
 }

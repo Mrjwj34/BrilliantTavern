@@ -82,6 +82,13 @@ public class ChatHistory {
     private String title;
 
     /**
+     * 附件信息 (JSON格式，存储图片URI等)
+     * 格式示例: {"images": [{"uri": "/api/images/2024-01-01/img_xxx.jpg", "description": "描述", "isSelf": true}]}
+     */
+    @Column(name = "attachments", columnDefinition = "TEXT")
+    private String attachments;
+
+    /**
      * 消息角色枚举
      */
     public enum Role {

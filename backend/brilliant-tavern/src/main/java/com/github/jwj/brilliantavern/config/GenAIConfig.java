@@ -22,7 +22,7 @@ public class GenAIConfig {
     
     @Data
     public static class GenAIProperties {
-        private String location = "us-central1";
+        private String location = "global";
         private String model = "gemini-2.5-flash";
         private Double temperature = 0.7;
         private Integer maxOutputTokens = 2048;

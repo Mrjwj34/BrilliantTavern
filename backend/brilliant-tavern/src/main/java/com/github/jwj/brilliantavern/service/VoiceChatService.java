@@ -173,6 +173,11 @@ public class VoiceChatService {
     @Transactional
     public void saveCompleteRound(UUID historyId, UUID sessionId, UUID userId, UUID cardId,
                                  String userMessage, String assistantMessage, String greetingMessage) {
+        saveCompleteRound(historyId, sessionId, userId, cardId, userMessage, assistantMessage, greetingMessage, null);
+    }
+    
+    public void saveCompleteRound(UUID historyId, UUID sessionId, UUID userId, UUID cardId,
+                                 String userMessage, String assistantMessage, String greetingMessage, String attachments) {
         OffsetDateTime now = OffsetDateTime.now();
         
         // 检查是否需要生成标题（历史记录为空 或者 已有记录但标题为空）
@@ -219,6 +224,7 @@ public class VoiceChatService {
                 .role(ChatHistory.Role.ASSISTANT)
                 .content(assistantMessage)
                 .timestamp(now.plusNanos(1000000)) // 稍微晚一点的时间戳
+                .attachments(attachments) // 保存附件信息
                 .build();
         chatHistoryRepository.save(assistantHistory);
         

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -95,6 +96,7 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
      * 更新历史记录标题（更新该historyId下所有记录）
      */
     @Modifying
+    @Transactional
     @Query("UPDATE ChatHistory ch SET ch.title = :title WHERE ch.historyId = :historyId AND (ch.title IS NULL OR ch.title = '')")
     int updateHistoryTitle(@Param("historyId") UUID historyId, @Param("title") String title);
 }

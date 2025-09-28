@@ -63,7 +63,7 @@ google:
     project-id: ${VERTEX_AI_PROJECT_ID}
     api-key: ${GOOGLE_API_KEY:}  # 可选，用于Gemini Developer API
     vertex-ai:
-      location: ${VERTEX_AI_LOCATION:us-central1}
+      location: ${VERTEX_AI_LOCATION:global}
       model: ${VERTEX_AI_MODEL:gemini-flash-latest}
       temperature: 1.1
       max-output-tokens: 2048
@@ -98,6 +98,10 @@ jwt:
 
 # 应用配置
 app:
+  uploads:
+    images:
+      dir: uploads/images
+      base-url: /api/images
   # TTS服务配置
   tts:
     base-url: ${TTS_SERVICE_URL:http://localhost:9880}  # TTS服务基础URL
