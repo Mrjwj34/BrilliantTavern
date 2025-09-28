@@ -77,6 +77,36 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     List<Object[]> findUserCardHistoriesSummary(@Param("userId") UUID userId, @Param("cardId") UUID cardId, Pageable pageable);
 
     /**
+     * 根据用户ID获取所有历史记录的概要信息（支持游标分页）
+     */
+    @Query("SELECT ch.historyId, ch.cardId, " +
+           "MIN(ch.timestamp) as startTime, MAX(ch.timestamp) as lastTime, " +
+           "COUNT(ch.id) as messageCount, " +
+           "'' as firstMessage, " +
+           "MAX(CASE WHEN ch.title IS NOT NULL THEN ch.title ELSE '' END) as title " +
+           "FROM ChatHistory ch " +
+           "WHERE ch.userId = :userId " +
+           "GROUP BY ch.historyId, ch.cardId " +
+           "HAVING MAX(ch.timestamp) < :cursor " +
+           "ORDER BY MAX(ch.timestamp) DESC")
+    List<Object[]> findUserHistoriesSummaryWithCursor(@Param("userId") UUID userId, @Param("cursor") java.time.OffsetDateTime cursor, Pageable pageable);
+
+    /**
+     * 根据用户ID和角色卡ID获取历史记录概要信息（支持游标分页）
+     */
+    @Query("SELECT ch.historyId, ch.cardId, " +
+           "MIN(ch.timestamp) as startTime, MAX(ch.timestamp) as lastTime, " +
+           "COUNT(ch.id) as messageCount, " +
+           "'' as firstMessage, " +
+           "MAX(CASE WHEN ch.title IS NOT NULL THEN ch.title ELSE '' END) as title " +
+           "FROM ChatHistory ch " +
+           "WHERE ch.userId = :userId AND ch.cardId = :cardId " +
+           "GROUP BY ch.historyId, ch.cardId " +
+           "HAVING MAX(ch.timestamp) < :cursor " +
+           "ORDER BY MAX(ch.timestamp) DESC")
+    List<Object[]> findUserCardHistoriesSummaryWithCursor(@Param("userId") UUID userId, @Param("cardId") UUID cardId, @Param("cursor") java.time.OffsetDateTime cursor, Pageable pageable);
+
+    /**
      * 根据会话ID删除对话历史
      */
     void deleteBySessionId(UUID sessionId);

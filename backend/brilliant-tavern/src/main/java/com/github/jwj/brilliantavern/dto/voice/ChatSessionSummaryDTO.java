@@ -56,4 +56,9 @@ public class ChatSessionSummaryDTO {
      * 会话标题（可以是第一条消息的摘要或自定义标题）
      */
     private String title;
+    
+    /**
+     * 游标字符串，用于分页（基于lastTime）
+     */
+    private String cursor;
 }

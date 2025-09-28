@@ -478,11 +478,49 @@ public class VoiceChatService {
     }
 
     /**
+     * 获取用户的所有历史记录列表（支持游标分页）
+     */
+    public List<ChatSessionSummaryDTO> getUserChatHistories(UUID userId, int limit, String cursor) {
+        if (cursor == null || cursor.trim().isEmpty()) {
+            return getUserChatHistories(userId, limit);
+        }
+        
+        try {
+            // 将cursor解析为时间戳
+            OffsetDateTime cursorTime = OffsetDateTime.parse(cursor);
+            List<Object[]> results = chatHistoryRepository.findUserHistoriesSummaryWithCursor(userId, cursorTime, PageRequest.of(0, limit));
+            return results.stream().map(this::convertToHistorySummary).collect(java.util.stream.Collectors.toList());
+        } catch (Exception e) {
+            log.warn("游标解析失败，使用默认分页: cursor={}", cursor, e);
+            return getUserChatHistories(userId, limit);
+        }
+    }
+
+    /**
      * 获取用户与指定角色卡的历史记录列表
      */
     public List<ChatSessionSummaryDTO> getUserCardChatHistories(UUID userId, UUID cardId, int limit) {
         List<Object[]> results = chatHistoryRepository.findUserCardHistoriesSummary(userId, cardId, PageRequest.of(0, limit));
         return results.stream().map(this::convertToHistorySummary).collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * 获取用户与指定角色卡的历史记录列表（支持游标分页）
+     */
+    public List<ChatSessionSummaryDTO> getUserCardChatHistories(UUID userId, UUID cardId, int limit, String cursor) {
+        if (cursor == null || cursor.trim().isEmpty()) {
+            return getUserCardChatHistories(userId, cardId, limit);
+        }
+        
+        try {
+            // 将cursor解析为时间戳
+            OffsetDateTime cursorTime = OffsetDateTime.parse(cursor);
+            List<Object[]> results = chatHistoryRepository.findUserCardHistoriesSummaryWithCursor(userId, cardId, cursorTime, PageRequest.of(0, limit));
+            return results.stream().map(this::convertToHistorySummary).collect(java.util.stream.Collectors.toList());
+        } catch (Exception e) {
+            log.warn("游标解析失败，使用默认分页: cursor={}", cursor, e);
+            return getUserCardChatHistories(userId, cardId, limit);
+        }
     }
 
     /**
@@ -516,6 +554,7 @@ public class VoiceChatService {
                 .messageCount(messageCount)
                 .firstMessage(firstMessage)
                 .title(title)
+                .cursor(lastTime != null ? lastTime.toString() : null) // 使用lastTime作为游标
                 .build();
     }
 

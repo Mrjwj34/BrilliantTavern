@@ -88,7 +88,7 @@
             <div class="loading-spinner"></div>
             <span>加载中...</span>
           </div>
-          <div v-else-if="filteredChatSessions.length === 0" class="history-placeholder">
+          <div v-else-if="chatSessions.length === 0" class="history-placeholder">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="history-placeholder-icon">
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
             </svg>
@@ -99,7 +99,7 @@
           <div v-else class="history-list">
             <transition-group name="history-item" tag="div">
               <div
-                v-for="session in filteredChatSessions"
+                v-for="session in chatSessions"
                 :key="session.sessionId"
                 :class="[
                   'history-item', 
@@ -140,6 +140,20 @@
               </div>
               </div>
             </transition-group>
+            
+            <!-- 无缝滚动触发区域 -->
+            <div v-if="hasMoreHistory" ref="loadTrigger" class="load-trigger"></div>
+            
+            <!-- 加载更多提示 -->
+            <div v-if="loadingMoreHistory" class="load-more-indicator">
+              <div class="loading-spinner"></div>
+              <span>加载更多...</span>
+            </div>
+            
+            <!-- 没有更多数据提示 -->
+            <div v-else-if="!hasMoreHistory && chatSessions.length > 0" class="no-more-indicator">
+              <span>— 没有更多记录了 —</span>
+            </div>
           </div>
         </div>
       </div>
@@ -301,7 +315,7 @@
   </div>
 </template>
 <script>
-import { ref, reactive, onMounted, onUnmounted, computed, provide } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, provide, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { authAPI, voiceChatAPI } from '@/api'
 import { storage, tokenUtils, format } from '@/utils'
@@ -329,11 +343,17 @@ export default {
     // 历史对话相关
     const chatSessions = ref([])
     const loadingHistory = ref(false)
+    const loadingMoreHistory = ref(false) // 加载更多历史记录
+    const hasMoreHistory = ref(true) // 是否还有更多历史记录
     const currentSessionId = ref(null)
     const selectedCharacterInMarket = ref(null) // 当前在市场中选中的角色
     const selectedSessionData = ref(null) // 当前选中的会话详细数据
     const newlyInsertedSessions = ref(new Set()) // 新插入的会话集合
     const typingTitles = ref(new Map()) // 正在打字显示的标题
+    const historyCursor = ref(null) // 历史记录分页游标
+    const loadTrigger = ref(null) // 无缝滚动触发元素
+    const observer = ref(null) // IntersectionObserver 实例
+    const pendingIntersect = ref(false) // 是否有待处理的相交
     
     // WebSocket相关
     const stompClient = ref(null)
@@ -358,16 +378,7 @@ export default {
       { id: 'voice', label: '语音对话' }
     ]
 
-    // 根据当前选中角色筛选历史对话
-    const filteredChatSessions = computed(() => {
-      if (!selectedCharacterInMarket.value) {
-        // 没有选中角色时显示所有对话
-        return chatSessions.value
-      } else {
-        // 选中角色时只显示与该角色的对话
-        return chatSessions.value.filter(session => session.cardId === selectedCharacterInMarket.value.id)
-      }
-    })
+    // 注释：filteredChatSessions已移除，现在直接在后端API中进行筛选
 
     // 计算属性用于安全访问集合和映射
     const isNewlyInserted = (sessionId) => {
@@ -418,52 +429,96 @@ export default {
     }
 
     // 获取历史对话列表
-    const fetchChatSessions = async (isRealTimeUpdate = false) => {
+    const fetchChatSessions = async (isRealTimeUpdate = false, loadMore = false) => {
       if (!isRealTimeUpdate) {
-        loadingHistory.value = true
+        if (loadMore) {
+          loadingMoreHistory.value = true
+        } else {
+          loadingHistory.value = true
+          // 重置分页状态
+          historyCursor.value = null
+          hasMoreHistory.value = true
+        }
       }
       
       try {
-        const response = await voiceChatAPI.getUserSessions({ limit: 20 })
+        const params = { 
+          limit: 20,
+          ...(selectedCharacterInMarket.value && { cardId: selectedCharacterInMarket.value.id }),
+          ...(loadMore && historyCursor.value && { cursor: historyCursor.value })
+        }
+        
+        const response = await voiceChatAPI.getUserSessions(params)
         if (response?.code === 200) {
           const newSessions = Array.isArray(response.data) ? response.data : []
           
-          if (isRealTimeUpdate) {
-            // 实时更新时，检测新增的会话和标题更新
-            const oldSessionIds = new Set(chatSessions.value.map(s => s.sessionId))
+          if (loadMore) {
+            // 加载更多时，合并到现有列表
+            chatSessions.value = [...chatSessions.value, ...newSessions]
+          } else {
+            if (isRealTimeUpdate) {
+              // 实时更新时，检测新增的会话和标题更新
+              const oldSessionIds = new Set(chatSessions.value.map(s => s.sessionId))
+              
+              // 检测新增的会话
+              newSessions.forEach(session => {
+                if (!oldSessionIds.has(session.sessionId)) {
+                  newlyInsertedSessions.value.add(session.sessionId)
+                  // 2秒后移除新增标记
+                  setTimeout(() => {
+                    newlyInsertedSessions.value.delete(session.sessionId)
+                  }, 2000)
+                }
+              })
+              
+              // 检测标题更新
+              newSessions.forEach(newSession => {
+                const oldSession = chatSessions.value.find(s => s.sessionId === newSession.sessionId)
+                if (oldSession && oldSession.title !== newSession.title && newSession.title !== '新对话') {
+                  // 启动打字机效果
+                  startTypingAnimation(newSession.sessionId, newSession.title)
+                }
+              })
+            }
             
-            // 检测新增的会话
-            newSessions.forEach(session => {
-              if (!oldSessionIds.has(session.sessionId)) {
-                newlyInsertedSessions.value.add(session.sessionId)
-                // 2秒后移除新增标记
-                setTimeout(() => {
-                  newlyInsertedSessions.value.delete(session.sessionId)
-                }, 2000)
-              }
-            })
-            
-            // 检测标题更新
-            newSessions.forEach(newSession => {
-              const oldSession = chatSessions.value.find(s => s.sessionId === newSession.sessionId)
-              if (oldSession && oldSession.title !== newSession.title && newSession.title !== '新对话') {
-                // 启动打字机效果
-                startTypingAnimation(newSession.sessionId, newSession.title)
-              }
-            })
+            chatSessions.value = newSessions
           }
           
-          chatSessions.value = newSessions
+          // 更新游标和分页状态
+          if (newSessions.length > 0) {
+            const lastSession = newSessions[newSessions.length - 1]
+            historyCursor.value = lastSession.cursor
+            hasMoreHistory.value = newSessions.length === 20 // 如果返回的数量等于限制，说明可能还有更多
+            
+            console.log('分页状态更新:', {
+              newSessionsCount: newSessions.length,
+              totalSessions: chatSessions.value.length,
+              newCursor: historyCursor.value,
+              hasMore: hasMoreHistory.value,
+              loadMore
+            })
+          } else {
+            hasMoreHistory.value = false
+            console.log('没有更多历史记录')
+          }
         } else {
-          chatSessions.value = []
+          if (!loadMore) {
+            chatSessions.value = []
+          }
           console.error('获取历史对话失败:', response?.message)
         }
       } catch (error) {
         console.error('获取历史对话异常:', error)
-        chatSessions.value = []
+        if (!loadMore) {
+          chatSessions.value = []
+        }
       } finally {
         if (!isRealTimeUpdate) {
-          loadingHistory.value = false
+          if (loadMore) {
+            loadingMoreHistory.value = false
+          } else {
+            loadingHistory.value = false
+          }
         }
       }
     }
@@ -472,6 +527,91 @@ export default {
     const refreshHistory = () => {
       fetchChatSessions()
     }
+
+    // 加载更多历史记录
+    const loadMoreHistory = async () => {
+      if (!loadingMoreHistory.value && hasMoreHistory.value) {
+        console.log('IntersectionObserver 触发加载更多历史记录')
+        await fetchChatSessions(false, true)
+      }
+    }
+
+    // 设置无缝滚动 - 使用 IntersectionObserver
+    const setupInfiniteScroll = () => {
+      if (!observer.value) {
+        observer.value = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (!hasMoreHistory.value) {
+                pendingIntersect.value = false
+                return
+              }
+
+              if (entry.isIntersecting) {
+                console.log('IntersectionObserver 检测到触发区域')
+                if (loadingMoreHistory.value) {
+                  pendingIntersect.value = true
+                } else {
+                  pendingIntersect.value = false
+                  loadMoreHistory()
+                }
+              } else {
+                pendingIntersect.value = false
+              }
+            })
+          },
+          {
+            root: null, // 使用 viewport 作为根
+            rootMargin: '50px', // 提前50px开始加载
+            threshold: 0.1
+          }
+        )
+      }
+
+      if (loadTrigger.value) {
+        observer.value.observe(loadTrigger.value)
+        console.log('IntersectionObserver 开始观察 loadTrigger')
+      }
+    }
+
+    // 监听 loadTrigger 元素变化
+    watch(
+      () => loadTrigger.value,
+      (newEl, oldEl) => {
+        if (observer.value && oldEl) {
+          observer.value.unobserve(oldEl)
+        }
+
+        if (newEl) {
+          setupInfiniteScroll()
+        }
+      }
+    )
+
+    // 监听 hasMore 状态变化
+    watch(
+      () => hasMoreHistory.value,
+      (newHasMore) => {
+        if (!observer.value) return
+
+        if (newHasMore) {
+          setupInfiniteScroll()
+        } else if (loadTrigger.value) {
+          observer.value.unobserve(loadTrigger.value)
+        }
+        if (!newHasMore) {
+          pendingIntersect.value = false
+        }
+      }
+    )
+
+    // 监听加载状态变化
+    watch(loadingMoreHistory, (isLoading) => {
+      if (!isLoading && pendingIntersect.value && hasMoreHistory.value) {
+        pendingIntersect.value = false
+        loadMoreHistory()
+      }
+    })
 
     // 选择历史对话会话
     const selectHistorySession = (session) => {
@@ -559,6 +699,8 @@ export default {
       // 清除当前选中的历史会话
       currentSessionId.value = null
       selectedSessionData.value = null
+      // 重新加载历史记录（筛选该角色的对话）
+      fetchChatSessions()
     }
 
     // 监听角色取消选择事件
@@ -567,6 +709,8 @@ export default {
       // 清除当前选中的历史会话
       currentSessionId.value = null
       selectedSessionData.value = null
+      // 重新加载所有历史记录
+      fetchChatSessions()
     }
 
     const setActiveTab = (tabId) => {
@@ -709,6 +853,10 @@ export default {
       
       if (userLoaded) {
         await fetchChatSessions() // 加载历史对话
+        // 初始化无缝滚动
+        await nextTick()
+        setupInfiniteScroll()
+        
         // 延迟建立WebSocket连接，确保用户信息已加载
         setTimeout(() => {
           connectWebSocket() // 建立WebSocket连接用于实时更新
@@ -718,6 +866,11 @@ export default {
 
     onUnmounted(() => {
       disconnectWebSocket()
+      // 清理 IntersectionObserver
+      if (observer.value) {
+        observer.value.disconnect()
+        observer.value = null
+      }
     })
 
     return {
@@ -731,10 +884,12 @@ export default {
       // 历史对话相关
       chatSessions,
       loadingHistory,
+      loadingMoreHistory,
+      hasMoreHistory,
       currentSessionId,
       selectedCharacterInMarket,
       selectedSessionData,
-      filteredChatSessions,
+      loadTrigger,
       
       // 方法
       setActiveTab,
@@ -748,6 +903,7 @@ export default {
       // 历史对话方法
       fetchChatSessions,
       refreshHistory,
+      loadMoreHistory,
       selectHistorySession,
       deleteHistorySession,
       closeDeleteConfirm,
@@ -1736,6 +1892,35 @@ export default {
   &:nth-child(1) { animation-delay: 0.05s; }
   &:nth-child(2) { animation-delay: 0.1s; }
   &:nth-child(3) { animation-delay: 0.15s; }
+}
+
+// 加载更多指示器
+.load-more-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing;
+  gap: $spacing-xs;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+// 无更多数据指示器
+.no-more-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $spacing;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  margin-top: auto;
+}
+
+// 无缝滚动触发区域
+.load-trigger {
+  height: 1px;
+  width: 100%;
 }
 
 /* 删除确认对话框样式 */

@@ -127,15 +127,25 @@ public class VoiceChatController {
      * 获取用户的所有聊天会话
      */
     @GetMapping("/sessions")
-    @Operation(summary = "获取用户所有聊天会话", description = "获取当前用户的所有聊天会话列表")
+    @Operation(summary = "获取用户所有聊天会话", description = "获取当前用户的所有聊天会话列表，支持游标分页")
     public ResponseEntity<ApiResponse<List<ChatSessionSummaryDTO>>> getUserChatSessions(
             @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(required = false) UUID cardId,
+            @RequestParam(required = false) String cursor,
             Authentication authentication) {
         
         UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
         
-        List<ChatSessionSummaryDTO> sessions = voiceChatService.getUserChatHistories(
-                userPrincipal.getId(), limit);
+        List<ChatSessionSummaryDTO> sessions;
+        if (cardId != null) {
+            // 获取指定角色卡的会话
+            sessions = voiceChatService.getUserCardChatHistories(
+                    userPrincipal.getId(), cardId, limit, cursor);
+        } else {
+            // 获取所有会话
+            sessions = voiceChatService.getUserChatHistories(
+                    userPrincipal.getId(), limit, cursor);
+        }
         
         return ResponseEntity.ok(ApiResponse.success("获取会话列表成功", sessions));
     }
