@@ -353,7 +353,7 @@ public class AIService {
      */
     @lombok.Value
     public static class AIStreamEvent {
-        public enum Type { CHUNK, COMPLETED }
+        public enum Type { CHUNK, COMPLETED, MEMORY_RETRIEVAL_STARTED, MEMORY_RETRIEVAL_COMPLETED }
 
         Type type;
         String messageId;
@@ -366,6 +366,14 @@ public class AIService {
 
         public static AIStreamEvent completed(String messageId, ProcessedAiResponse response) {
             return new AIStreamEvent(Type.COMPLETED, messageId, null, response);
+        }
+        
+        public static AIStreamEvent memoryRetrievalStarted(String messageId, String content) {
+            return new AIStreamEvent(Type.MEMORY_RETRIEVAL_STARTED, messageId, content, null);
+        }
+        
+        public static AIStreamEvent memoryRetrievalCompleted(String messageId, String content) {
+            return new AIStreamEvent(Type.MEMORY_RETRIEVAL_COMPLETED, messageId, content, null);
         }
     }
 
@@ -458,8 +466,6 @@ public class AIService {
         try {
             log.debug("开始处理记忆检索: {}", memTagResponse);
             
-            log.debug("开始记忆检索流程");
-            
             // 解析[MEM]标签中的查询文本
             String queryText = extractQueryFromMemTag(memTagResponse);
             if (queryText == null) {
@@ -468,8 +474,19 @@ public class AIService {
                 return;
             }
             
+            // 发送记忆检索开始事件
+            String characterName = characterCard.getName();
+            String startMessage = String.format("%s正在回忆...", characterName);
+            sink.next(AIStreamEvent.memoryRetrievalStarted(messageId, startMessage));
+            log.debug("发送记忆检索开始事件: {}", startMessage);
+            
             // 执行记忆检索
             String retrievalResult = executeMemoryRetrieval(queryText, characterCard, userId);
+            
+            // 发送记忆检索完成事件
+            String completedMessage = String.format("%s想起来了!", characterName);
+            sink.next(AIStreamEvent.memoryRetrievalCompleted(messageId, completedMessage));
+            log.debug("发送记忆检索完成事件: {}", completedMessage);
             
             // 模拟虚拟对话轮次 - 添加到对话历史但不入库
             addVirtualConversationRound(conversationId, queryText, retrievalResult);

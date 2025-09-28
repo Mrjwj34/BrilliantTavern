@@ -919,6 +919,12 @@ export default {
           case 'TITLE_UPDATE':
             handleTitleUpdate(message)
             break
+          case 'MEMORY_RETRIEVAL_STARTED':
+            handleMemoryRetrievalStarted(message)
+            break
+          case 'MEMORY_RETRIEVAL_COMPLETED':
+            handleMemoryRetrievalCompleted(message)
+            break
           default:
             console.warn('未知的消息类型:', type)
             break
@@ -1283,7 +1289,45 @@ export default {
       }
     }
 
-    // 处理记忆检索事件
+    // 处理记忆检索开始事件
+    const handleMemoryRetrievalStarted = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理记忆检索开始:', { messageId, payload })
+      
+      if (!payload?.message) return
+      
+      // 显示记忆检索开始的友好提示
+      const startMessages = [
+        `🤔 ${payload.message}`,
+        `💭 ${payload.message}`,
+        `🧠 ${payload.message}`,
+        `📚 ${payload.message}`
+      ]
+      
+      const randomMessage = startMessages[Math.floor(Math.random() * startMessages.length)]
+      notification.info(randomMessage)
+    }
+    
+    // 处理记忆检索完成事件
+    const handleMemoryRetrievalCompleted = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理记忆检索完成:', { messageId, payload })
+      
+      if (!payload?.message) return
+      
+      // 显示记忆检索完成的友好提示
+      const completedMessages = [
+        `✨ ${payload.message}`,
+        `💡 ${payload.message}`,
+        `🎯 ${payload.message}`,
+        `🌟 ${payload.message}`
+      ]
+      
+      const randomMessage = completedMessages[Math.floor(Math.random() * completedMessages.length)]
+      notification.success(randomMessage)
+    }
+
+    // 处理其他事件
     const handleMemoryEvent = (text) => {
       console.debug('处理记忆事件:', text)
       const characterName = selectedCharacter.value?.name || '角色'

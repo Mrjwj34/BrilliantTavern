@@ -162,7 +162,38 @@ public class StreamingVoiceOrchestrator {
                 .next()
                 .flatMapMany(aiEvent -> handleAICompletion(aiEvent, sessionState));
         
-        return Flux.merge(handlerEvents, completionEvents);
+        // 处理记忆检索事件
+        Flux<VoiceStreamEvent> memoryEvents = aiEvents
+                .filter(event -> event.getType() == AIService.AIStreamEvent.Type.MEMORY_RETRIEVAL_STARTED ||
+                               event.getType() == AIService.AIStreamEvent.Type.MEMORY_RETRIEVAL_COMPLETED)
+                .map(aiEvent -> handleMemoryRetrievalEvent(aiEvent, sessionState));
+        
+        return Flux.merge(handlerEvents, completionEvents, memoryEvents);
+    }
+    
+    /**
+     * 处理记忆检索事件
+     */
+    private VoiceStreamEvent handleMemoryRetrievalEvent(AIService.AIStreamEvent aiEvent, SessionState sessionState) {
+        VoiceStreamEvent.Type eventType = switch (aiEvent.getType()) {
+            case MEMORY_RETRIEVAL_STARTED -> VoiceStreamEvent.Type.MEMORY_RETRIEVAL_STARTED;
+            case MEMORY_RETRIEVAL_COMPLETED -> VoiceStreamEvent.Type.MEMORY_RETRIEVAL_COMPLETED;
+            default -> throw new IllegalArgumentException("不支持的记忆检索事件类型: " + aiEvent.getType());
+        };
+        
+        log.debug("处理记忆检索事件: type={}, content={}, sessionId={}, messageId={}", 
+                eventType, aiEvent.getContent(), sessionState.sessionId, sessionState.messageId);
+        
+        return VoiceStreamEvent.builder()
+                .type(eventType)
+                .sessionId(sessionState.sessionId)
+                .messageId(sessionState.messageId)
+                .timestamp(Instant.now().toEpochMilli())
+                .payload(Map.of(
+                        "message", aiEvent.getContent(),
+                        "action", eventType == VoiceStreamEvent.Type.MEMORY_RETRIEVAL_STARTED ? "memory_started" : "memory_completed"
+                ))
+                .build();
     }
     
     /**
