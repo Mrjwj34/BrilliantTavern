@@ -1,18 +1,18 @@
 # 服务器配置
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
-    context-path: /api
+    context-path: ${CONTEXT_PATH:/api}
 
 spring:
   application:
-    name: brilliant-tavern
+    name: ${APP_NAME:brilliant-tavern}
 
   # 数据库配置
   datasource:
-    url: jdbc:postgresql://localhost:5432/brilliant_tavern
-    username: postgres
-    password: 123456
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/brilliant_tavern}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:123456}
     driver-class-name: org.postgresql.Driver
   
   # JPA配置
@@ -91,10 +91,10 @@ character:
 
 # JWT配置
 jwt:
-  secret: BrilliantTavernJWTSecretKey2024ForProduction
-  expiration: 86400000  # 24小时 (单位：毫秒)
-  header: Authorization
-  token-prefix: "Bearer "
+  secret: ${JWT_SECRET:BrilliantTavernJWTSecretKey2024ForProduction}
+  expiration: ${JWT_EXPIRATION:86400000}  # 24小时 (单位：毫秒)
+  header: ${JWT_HEADER:Authorization}
+  token-prefix: ${JWT_TOKEN_PREFIX:"Bearer "}
 
 # 应用配置
 app:
@@ -143,7 +143,15 @@ app:
 
   # WebSocket配置
   websocket:
-    allowed-origins: http://localhost:3000,http://localhost:5173
+    allowed-origins: ${WEBSOCKET_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+  
+  # CORS配置
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
+    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS,PATCH}
+    allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+    allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+    max-age: ${CORS_MAX_AGE:3600}
 
 # SpringDoc OpenAPI 配置
 springdoc:

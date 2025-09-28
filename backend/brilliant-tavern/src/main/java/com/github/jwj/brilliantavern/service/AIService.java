@@ -307,7 +307,8 @@ public class AIService {
                     .replace("{character_name}", characterCard.getName())
                     .replace("{character_description}", getCharacterDescription(characterCard))
                     .replace("{character_personality}", getCharacterPersonality(characterCard))
-                    .replace("{character_style}", getCharacterStyle(characterCard))
+                    .replace("{character_scenario}", getCharacterScenario(characterCard))
+                    .replace("{character_examples}", getCharacterExamples(characterCard))
                     .replace("{voice_language}", voiceLanguage)
                     .replace("{subtitle_language}", subtitleLanguage);
             
@@ -338,13 +339,40 @@ public class AIService {
     }
     
     /**
-     * 获取角色说话风格
+     * 获取角色对话场景
      */
-    private String getCharacterStyle(CharacterCard characterCard) {
+    private String getCharacterScenario(CharacterCard characterCard) {
         if (characterCard.getCardData() != null && characterCard.getCardData().getScenario() != null) {
-            return "在" + characterCard.getCardData().getScenario() + "场景中自然对话";
+            return characterCard.getCardData().getScenario();
         }
-        return "自然、亲切";
+        return "日常生活场景";
+    }
+    
+    /**
+     * 获取角色对话实例
+     */
+    private String getCharacterExamples(CharacterCard characterCard) {
+        if (characterCard.getCardData() != null && characterCard.getCardData().getExampleDialogs() != null) {
+            StringBuilder examples = new StringBuilder();
+            CharacterCard.CharacterCardData.ExampleDialog[] exampleDialogs = characterCard.getCardData().getExampleDialogs();
+            
+            for (int i = 0; i < exampleDialogs.length; i++) {
+                CharacterCard.CharacterCardData.ExampleDialog dialog = exampleDialogs[i];
+                if (dialog.getUser() != null && dialog.getAssistant() != null) {
+                    examples.append("示例").append(i + 1).append(":\n");
+                    examples.append("用户: ").append(dialog.getUser()).append("\n");
+                    examples.append(characterCard.getName()).append(": ").append(dialog.getAssistant());
+                    
+                    // 如果不是最后一个对话，添加分隔符
+                    if (i < exampleDialogs.length - 1) {
+                        examples.append("\n\n");
+                    }
+                }
+            }
+            
+            return examples.toString().isEmpty() ? "暂无对话示例" : examples.toString();
+        }
+        return "暂无对话示例";
     }
 
 

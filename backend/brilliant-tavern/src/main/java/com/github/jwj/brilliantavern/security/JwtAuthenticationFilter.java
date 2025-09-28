@@ -53,7 +53,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String authToken = null;
         
         if (requestHeader != null && requestHeader.startsWith(tokenPrefix)) {
-            authToken = requestHeader.substring(tokenPrefix.length());
+            authToken = requestHeader.substring(tokenPrefix.length()).trim(); // 去除可能的空白字符
             try {
                 username = jwtUtil.getUsernameFromToken(authToken);
             } catch (Exception e) {

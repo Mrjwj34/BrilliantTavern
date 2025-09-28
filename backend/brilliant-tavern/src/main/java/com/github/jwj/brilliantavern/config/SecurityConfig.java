@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.config;
 import com.github.jwj.brilliantavern.security.JwtAuthenticationEntryPoint;
 import com.github.jwj.brilliantavern.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -37,6 +38,21 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final UserDetailsService userDetailsService;
+    
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+    
+    @Value("${app.cors.allowed-methods}")
+    private String allowedMethods;
+    
+    @Value("${app.cors.allowed-headers}")
+    private String allowedHeaders;
+    
+    @Value("${app.cors.allow-credentials}")
+    private boolean allowCredentials;
+    
+    @Value("${app.cors.max-age}")
+    private long maxAge;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -99,12 +115,26 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        //TODO: 改为配置文件配置
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:*", "https://localhost:*"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
+        
+        // 从配置文件读取允许的源
+        configuration.setAllowedOriginPatterns(Arrays.asList(allowedOrigins.split(",")));
+        
+        // 从配置文件读取允许的方法
+        configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
+        
+        // 从配置文件读取允许的头部
+        if ("*".equals(allowedHeaders)) {
+            configuration.setAllowedHeaders(List.of("*"));
+        } else {
+            configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
+        }
+        
+        // 从配置文件读取是否允许凭证
+        configuration.setAllowCredentials(allowCredentials);
+        
+        // 从配置文件读取最大缓存时间
+        configuration.setMaxAge(maxAge);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
