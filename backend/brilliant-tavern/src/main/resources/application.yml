@@ -119,6 +119,13 @@ app:
       sample-rate: 44100
       channels: 1
       bits-per-sample: 16
+    # 预热配置
+    warmup:
+      enabled: ${TTS_WARMUP_ENABLED:true}  # 是否启用预热
+      text: ${TTS_WARMUP_TEXT:你好，这是语音测试}  # 预热文本
+      voice-ids: ${TTS_WARMUP_VOICE_IDS:1,2,3}  # 预热的音色ID列表
+      timeout: ${TTS_WARMUP_TIMEOUT:15s}  # 预热超时时间
+      delay: ${TTS_WARMUP_DELAY:3s}  # 应用启动后延迟预热时间
   
   # 文件上传配置
   upload:

@@ -58,6 +58,11 @@ psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
 - `VERTEX_AI_MODEL`: 使用的模型 (默认 gemini-2.5-flash)
 - `GOOGLE_API_KEY`: Google API 密钥 (可选，用于 Gemini Developer API)
 - `TTS_SERVICE_URL`: TTS 服务基础 URL
+- `TTS_WARMUP_ENABLED`: 是否启用TTS预热 (默认 true)
+- `TTS_WARMUP_TEXT`: 预热使用的文本 (默认 "你好，这是语音测试")
+- `TTS_WARMUP_VOICE_IDS`: 预热的音色ID列表 (默认 "1,2,3")
+- `TTS_WARMUP_TIMEOUT`: 预热超时时间 (默认 15s)
+- `TTS_WARMUP_DELAY`: 启动后延迟预热时间 (默认 3s)
 
 ## 核心功能模块
 
@@ -77,10 +82,13 @@ psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
 - 对话历史管理和会话状态追踪
 - 流式事件处理架构 (事件驱动模式)
 
-### 4. TTS 语音管理 (`TTSVoiceController`, `TTSManagerService`)
+### 4. TTS 语音管理 (`TTSVoiceController`, `TTSManagerService`, `TTSWarmupService`)
 - 语音模型管理
 - Fish Speech TTS 集成
 - 语音缓存策略
+- **TTS服务预热机制**: 应用启动后自动预热常用音色，解决冷启动问题
+- **连接池优化**: 配置HTTP连接池，提升并发性能和连接复用
+- **健康检查**: 提供TTS服务状态监控和故障诊断
 
 ### 5. AI 服务 (`AIService`)
 - Google Vertex AI 集成 (Gemini 2.5 Flash)
@@ -170,6 +178,8 @@ mvn clean package -DskipTests
 6. **文件上传**: 头像等文件存储在 `backend/brilliant-tavern/uploads/` 目录
 7. **WebSocket 调试**: 注意前端 STOMP 连接和后端消息订阅路径匹配
 8. **流式处理**: 语音对话使用流式架构，注意异步处理和错误处理
+9. **TTS 预热**: 应用启动后会自动预热TTS服务，可通过环境变量控制预热行为
+10. **TTS 监控**: 使用 `/api/tts/health` 检查服务状态，`/api/tts/warmup` 手动触发预热
 
 ## 代码检查和构建
 

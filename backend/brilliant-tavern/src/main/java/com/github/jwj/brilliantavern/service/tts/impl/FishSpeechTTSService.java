@@ -76,13 +76,21 @@ public class FishSpeechTTSService implements TTSService {
     @Value("${app.tts.audio.temperature:0.8}")
     private Double temperature;
 
-    private WebClient fishSpeechWebClient;
+    private volatile WebClient fishSpeechWebClient;
 
     private WebClient getFishSpeechWebClient() {
         if (fishSpeechWebClient == null) {
-            fishSpeechWebClient = webClient.mutate()
-                    .baseUrl(baseUrl)
-                    .build();
+            synchronized (this) {
+                if (fishSpeechWebClient == null) {
+                    fishSpeechWebClient = webClient.mutate()
+                            .baseUrl(baseUrl)
+                            .defaultHeader("User-Agent", "BrilliantTavern/1.0")
+                            .defaultHeader("Accept", "*/*")
+                            .defaultHeader("Connection", "keep-alive")
+                            .build();
+                    log.info("初始化FishSpeech WebClient: baseUrl={}", baseUrl);
+                }
+            }
         }
         return fishSpeechWebClient;
     }
@@ -243,6 +251,30 @@ public class FishSpeechTTSService implements TTSService {
                 .thenReturn(referenceId)
                 .doOnSuccess(id -> log.info("成功添加指定ID的语音引用: {}", id))
                 .doOnError(error -> log.error("添加指定ID的语音引用失败: {}", referenceId, error));
+    }
+
+    /**
+     * TTS服务健康检查
+     * 
+     * @return 健康状态
+     */
+    public Mono<Boolean> healthCheck() {
+        log.debug("执行FishSpeech TTS服务健康检查");
+        
+        return getFishSpeechWebClient()
+                .get()
+                .uri("/health")  // 假设TTS服务提供健康检查端点
+                .retrieve()
+                .onStatus(
+                    status -> status.is4xxClientError() || status.is5xxServerError(),
+                    response -> Mono.just(new RuntimeException("健康检查失败: " + response.statusCode()))
+                )
+                .bodyToMono(String.class)
+                .timeout(Duration.ofSeconds(5))
+                .map(response -> true)
+                .onErrorReturn(false)
+                .doOnSuccess(healthy -> log.debug("FishSpeech TTS健康检查结果: {}", healthy))
+                .doOnError(error -> log.warn("FishSpeech TTS健康检查异常: {}", error.getMessage()));
     }
 
     /**
