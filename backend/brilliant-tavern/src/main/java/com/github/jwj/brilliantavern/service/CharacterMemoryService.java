@@ -31,7 +31,7 @@ public class CharacterMemoryService {
     private final CharacterMemoryRepository characterMemoryRepository;
     private final Client genAIClient;
 
-    @Value("${vertex.ai.embedding.model:embedding-001}")
+    @Value("${vertex.ai.embedding.model:gemini-embedding-001}")
     private String embeddingModel;
 
     @Value("${character.memory.similarity.threshold:0.7}")
