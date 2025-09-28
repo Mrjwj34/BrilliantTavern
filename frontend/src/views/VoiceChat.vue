@@ -37,7 +37,11 @@
 
         <!-- 语音对话界面 -->
         <div v-else-if="currentView === 'voice-chat'" key="voice-chat" class="voice-chat-section">
-          <RoundVoiceChat v-if="currentChatMode === 'round'" />
+          <RoundVoiceChat 
+            v-if="currentChatMode === 'round'" 
+            @character-selected="handleCharacterSelected"
+            @character-deselected="handleCharacterDeselected"
+          />
           <div v-else class="chat-placeholder">
             <div class="chat-icon">
               <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -187,13 +191,14 @@ import RoundVoiceChat from '@/components/RoundVoiceChat.vue'
 
 export default {
   name: 'VoiceChat',
+  emits: ['character-selected', 'character-deselected'],
   components: {
     VoiceCloneConfig,
     MyVoices,
     BrowseVoices,
     RoundVoiceChat
   },
-  setup() {
+  setup(props, { emit }) {
     // 注入来自Dashboard的会话数据
     const selectedSession = inject('selectedSession', null)
     
@@ -269,6 +274,16 @@ export default {
       // TODO: 这里可以添加更多音色选择后的处理逻辑
     }
 
+    // 处理角色选择事件
+    const handleCharacterSelected = (character) => {
+      emit('character-selected', character)
+    }
+
+    // 处理角色取消选择事件
+    const handleCharacterDeselected = () => {
+      emit('character-deselected')
+    }
+
     // 切换右侧边栏
     const toggleRightSidebar = () => {
       rightSidebarCollapsed.value = !rightSidebarCollapsed.value
@@ -309,6 +324,8 @@ export default {
       toggleSection,
       switchToChatMode,
       handleVoiceSelect,
+      handleCharacterSelected,
+      handleCharacterDeselected,
       toggleRightSidebar
     }
   }

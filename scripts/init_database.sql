@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS character_memories (
     user_id UUID NOT NULL,
     character_card_id UUID NOT NULL,
     memory_content TEXT NOT NULL,
-    embedding vector(768) NOT NULL, -- Gemini Embedding 001 模型生成768维向量
+    embedding vector(1536) NOT NULL, -- 限制为1536维以支持HNSW索引(最大2000维)
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

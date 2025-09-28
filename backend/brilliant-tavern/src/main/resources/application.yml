@@ -64,11 +64,28 @@ google:
     api-key: ${GOOGLE_API_KEY:}  # 可选，用于Gemini Developer API
     vertex-ai:
       location: ${VERTEX_AI_LOCATION:us-central1}
-      model: ${VERTEX_AI_MODEL:gemini-2.5-flash}
+      model: ${VERTEX_AI_MODEL:gemini-flash-latest}
       temperature: 1.1
       max-output-tokens: 2048
       think-budget: 0  # 思考预算，设为0禁用思考模式
       use-vertex-ai: true  # true使用Vertex AI，false使用Gemini Developer API
+
+# Vertex AI配置
+vertex:
+  ai:
+    # 嵌入模型配置
+    embedding:
+      model: ${VERTEX_AI_EMBEDDING_MODEL:gemini-embedding-001}  # Gemini嵌入模型
+
+# 角色记忆配置
+character:
+  memory:
+    # 相似度搜索阈值 (0-1，越接近1越相似)
+    similarity:
+      threshold: ${CHARACTER_MEMORY_SIMILARITY_THRESHOLD:0.7}
+    # 最大检索结果数量
+    max:
+      results: ${CHARACTER_MEMORY_MAX_RESULTS:5}
 
 
 

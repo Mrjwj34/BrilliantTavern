@@ -176,7 +176,8 @@ import { format, notification, storage } from '@/utils'
 
 export default {
   name: 'RoundVoiceChat',
-  setup() {
+  emits: ['character-selected', 'character-deselected'],
+  setup(props, { emit }) {
     // 注入来自Dashboard的会话数据
     const selectedSession = inject('selectedSession', null)
     
@@ -380,9 +381,14 @@ export default {
     }
 
     const selectCharacter = async (card) => {
+      // 总是发射角色选中事件，确保历史筛选正常工作
+      emit('character-selected', card)
+      
+      // 如果是同一个角色，只需要触发筛选，不需要重新创建会话
       if (selectedCharacter.value && selectedCharacter.value.id === card.id) {
         return
       }
+      
       selectedCharacter.value = card
       
       // 初始化语言设置（使用角色卡的默认语言）
@@ -460,6 +466,11 @@ export default {
           
           if (character) {
             selectedCharacter.value = character
+            // 保持角色卡的原始语言设置，不重置为中文
+            currentVoiceLanguage.value = character.voiceLanguage || 'zh'
+            currentSubtitleLanguage.value = character.subtitleLanguage || 'zh'
+            // 通知父组件角色被选中，用于筛选历史对话
+            emit('character-selected', character)
           }
         } catch (error) {
           console.error('获取角色信息失败:', error)
@@ -635,9 +646,18 @@ export default {
         messages.value = []
         userMessages.clear()
         assistantMessages.clear()
-          session.value = null
+        session.value = null
         sessionClosing.value = false
+        
+        // 仅在真正清除角色选择时才发射取消选择事件
+        // 注意：切换角色时不应该发射此事件
       }
+    }
+
+    // 清除角色选择
+    const clearCharacterSelection = () => {
+      selectedCharacter.value = null
+      emit('character-deselected')
     }
 
     const arrayBufferToBase64 = (buffer) => {
@@ -1216,14 +1236,38 @@ export default {
       console.debug('处理方法执行:', { messageId, payload })
       if (!messageId || !payload) return
       
-      // 显示方法执行结果或错误信息
-      const notification_type = payload.action === 'method_error' ? 'warning' : 'info'
-      const content = payload.result?.message || payload.error || '方法执行完成'
-      
-      if (notification_type === 'warning') {
-        notification.warning(content)
-      } else {
-        notification.info(content)
+      // 根据不同的方法执行结果显示不同的提示
+      if (payload.action === 'method_error') {
+        // 只有已知方法的错误才显示，避免显示未知方法的错误
+        const result = payload.result || {}
+        if (result.methodName === 'remember' || result.methodName === '记住') {
+          const errorContent = payload.error || '记忆存储失败'
+          notification.warning(errorContent)
+        }
+        // 未知方法的错误直接忽略，不显示弹窗
+      } else if (payload.action === 'method_executed') {
+        const result = payload.result || {}
+        
+        // 只处理已知的方法类型
+        if (result.methodName === 'remember' || result.methodName === '记住') {
+          const characterName = selectedCharacter.value?.name || '角色'
+          const memoryContent = result.memoryContent || ''
+          const shortContent = memoryContent.length > 15 ? memoryContent.substring(0, 15) + '...' : memoryContent
+          
+          // 显示有趣的记忆成功提示
+          const memoryMessages = [
+            `💭 ${characterName}默默记下了这件事...`,
+            `🧠 ${characterName}把这个重要信息存进了脑海里！`,
+            `📝 ${characterName}认真记住了：${shortContent}`,
+            `✨ ${characterName}将这段记忆珍藏起来了`,
+            `🎯 ${characterName}牢牢记住了这个重要信息！`
+          ]
+          
+          const randomMessage = memoryMessages[Math.floor(Math.random() * memoryMessages.length)]
+          
+          notification.success(randomMessage)
+        }
+        // 未识别的方法直接忽略，不显示任何弹窗
       }
     }
 

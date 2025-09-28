@@ -867,9 +867,6 @@ export default {
       showDetailModal.value = true
       // 初始化编辑表单数据，实现自动回显
       initEditForm(card)
-      
-      // 通知父组件角色被选中
-      emit('character-selected', card)
     }
 
     // 关闭详情弹窗
@@ -877,9 +874,6 @@ export default {
       showDetailModal.value = false
       selectedCard.value = null
       editMode.value = false
-      
-      // 通知父组件角色被取消选择
-      emit('character-deselected')
     }
 
     // 初始化编辑表单数据

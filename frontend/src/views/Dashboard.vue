@@ -280,8 +280,6 @@
           <div v-else-if="activeTab === 'market'" key="market" class="market-view">
             <CharacterMarket 
               @create-new="handleCreateNew" 
-              @character-selected="handleCharacterSelected"
-              @character-deselected="handleCharacterDeselected"
             />
           </div>
 
@@ -292,7 +290,10 @@
 
           <!-- 语音对话页面 -->
           <div v-else-if="activeTab === 'voice'" key="voice" class="voice-view">
-            <VoiceChat />
+            <VoiceChat 
+              @character-selected="handleCharacterSelected"
+              @character-deselected="handleCharacterDeselected"
+            />
           </div>
         </transition>
       </div>
@@ -552,7 +553,7 @@ export default {
       return format.date(timestamp, 'MM-DD HH:mm')
     }
 
-    // 监听角色市场中的角色选择事件
+    // 监听角色选择事件（现在只来自语音对话界面）
     const handleCharacterSelected = (character) => {
       selectedCharacterInMarket.value = character
       // 清除当前选中的历史会话
@@ -560,7 +561,7 @@ export default {
       selectedSessionData.value = null
     }
 
-    // 监听角色市场中的角色取消选择事件
+    // 监听角色取消选择事件
     const handleCharacterDeselected = () => {
       selectedCharacterInMarket.value = null
       // 清除当前选中的历史会话
