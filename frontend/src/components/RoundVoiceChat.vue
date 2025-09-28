@@ -1,10 +1,12 @@
 <template>
   <div class="round-voice-chat">
-    <aside class="character-panel">
+    <aside class="character-panel" :class="{ collapsed: characterPanelCollapsed }">
       <div class="panel-header">
         <h3>选择角色卡</h3>
-        <button class="refresh-btn" @click="fetchCharacters(true)" :disabled="loadingCharacters">
-          刷新
+        <button class="collapse-btn" @click="toggleCharacterPanel" title="收起侧边栏">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15,18 9,12 15,6"/>
+          </svg>
         </button>
       </div>
       <div class="search-box">
@@ -14,10 +16,18 @@
           placeholder="搜索角色卡"
           @keyup.enter="fetchCharacters(true)"
         />
-        <button class="search-btn" @click="fetchCharacters(true)">搜索</button>
+        <button class="search-btn" @click="fetchCharacters(true)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="M21 21l-4.35-4.35"/>
+          </svg>
+        </button>
       </div>
       <div class="character-list" :class="{ loading: loadingCharacters }">
-        <div v-if="loadingCharacters" class="loading-hint">加载角色中...</div>
+        <div v-if="loadingCharacters" class="loading-hint">
+          <div class="loading-spinner"></div>
+          加载角色中...
+        </div>
         <template v-else>
           <div
             v-for="card in filteredCharacters"
@@ -31,7 +41,6 @@
             </div>
             <p class="item-desc">{{ card.shortDescription || '暂无描述' }}</p>
             <div class="item-meta">
-              <span>音色ID: {{ card.ttsVoiceId || '默认' }}</span>
               <span v-if="card.likesCount !== undefined">❤ {{ card.likesCount }}</span>
             </div>
           </div>
@@ -42,37 +51,45 @@
       </div>
     </aside>
 
+    <!-- 收起时的浮动展开按钮 -->
+    <div v-show="characterPanelCollapsed" class="floating-expand-btn" @click="toggleCharacterPanel">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9,18 15,12 9,6"/>
+      </svg>
+    </div>
+
     <section class="chat-panel">
       <header class="chat-header">
         <div>
-          <h2>轮次语音对话</h2>
-          <p v-if="selectedCharacter">当前角色：{{ selectedCharacter.name }}</p>
-          <p v-else>请选择角色后开始对话</p>
-          
-          <!-- 语言设置区域 -->
-          <div v-if="selectedCharacter" class="language-settings">
-            <div class="language-item">
-              <label class="language-label">语音语言：</label>
-              <select v-model="currentVoiceLanguage" class="language-select" @change="updateLanguageSettings">
-                <option value="zh">中文</option>
-                <option value="ja">日文</option>
-                <option value="en">英文</option>
-              </select>
-            </div>
-            <div class="language-item">
-              <label class="language-label">字幕语言：</label>
-              <select v-model="currentSubtitleLanguage" class="language-select" @change="updateLanguageSettings">
-                <option value="zh">中文</option>
-                <option value="ja">日文</option>
-                <option value="en">英文</option>
-                <option value="ko">韩文</option>
-                <option value="fr">法文</option>
-                <option value="de">德文</option>
-                <option value="es">西班牙文</option>
-                <option value="ru">俄文</option>
-              </select>
+          <div class="header-top">
+            <h2>轮次语音对话</h2>
+            <!-- 语言设置区域 -->
+            <div v-if="selectedCharacter" class="language-settings">
+              <div class="language-item">
+                <label class="language-label">语音语言：</label>
+                <select v-model="currentVoiceLanguage" class="language-select" @change="updateLanguageSettings">
+                  <option value="zh">中文</option>
+                  <option value="ja">日文</option>
+                  <option value="en">英文</option>
+                </select>
+              </div>
+              <div class="language-item">
+                <label class="language-label">字幕语言：</label>
+                <select v-model="currentSubtitleLanguage" class="language-select" @change="updateLanguageSettings">
+                  <option value="zh">中文</option>
+                  <option value="ja">日文</option>
+                  <option value="en">英文</option>
+                  <option value="ko">韩文</option>
+                  <option value="fr">法文</option>
+                  <option value="de">德文</option>
+                  <option value="es">西班牙文</option>
+                  <option value="ru">俄文</option>
+                </select>
+              </div>
             </div>
           </div>
+          <p v-if="selectedCharacter">当前角色：{{ selectedCharacter.name }}</p>
+          <p v-else>请选择角色后开始对话</p>
           
           <!-- 标题显示区域 -->
           <div v-if="chatTitle" class="chat-title-area">
@@ -82,9 +99,14 @@
             </span>
           </div>
         </div>
-        <div class="session-info" v-if="session">
-          <span class="status-badge" :class="{ active: stompConnected }">{{ stompConnected ? '已连接' : '未连接' }}</span>
-          <span class="session-id">会话ID：{{ session.sessionId }}</span>
+        <div class="session-info" v-if="session || isSelectingCharacter">
+          <span class="status-badge" :class="{ 
+            active: stompConnected && !isSelectingCharacter, 
+            connecting: (!stompConnected && session) || isSelectingCharacter 
+          }">
+            <div v-if="(!stompConnected && session) || isSelectingCharacter" class="connecting-spinner"></div>
+            {{ isSelectingCharacter ? '准备中...' : (stompConnected ? '已连接' : '连接中...') }}
+          </span>
         </div>
       </header>
 
@@ -93,19 +115,101 @@
           <p>请从左侧选择一个角色卡以开启语音对话体验。</p>
         </div>
         <div v-else class="conversation" ref="chatListRef">
-          <div v-if="historyLoading" class="loading-hint">加载历史对话...</div>
+          <div v-if="historyLoading" class="history-loading">
+            <div class="history-loading-spinner"></div>
+            <span>加载历史对话...</span>
+          </div>
+          <!-- 场景描述区域 -->
+          <div v-if="!historyLoading && selectedCharacter && !messages.length" class="scene-description">
+            <div v-if="selectedCharacter.scenario" class="scenario-text">
+              <em>{{ selectedCharacter.scenario }}</em>
+            </div>
+            <div v-else class="default-scene">
+              <em>欢迎和 {{ selectedCharacter.name }} 对话，请开始你们的交流...</em>
+            </div>
+          </div>
           <div
             v-for="message in messages"
             :key="message.id"
             :class="['message', message.role]"
           >
-            <div class="meta">
-              <span class="role">{{ message.role === 'user' ? '我' : selectedCharacter.name }}</span>
-              <span class="time">{{ formatTime(message.timestamp) }}</span>
+            <div class="message-avatar">
+              <img 
+                v-if="message.role === 'assistant' && selectedCharacter?.avatarUrl" 
+                :src="selectedCharacter.avatarUrl" 
+                :alt="selectedCharacter.name" 
+                class="avatar"
+              />
+              <div 
+                v-else-if="message.role === 'assistant'" 
+                class="avatar default-avatar assistant-avatar"
+              >
+                {{ selectedCharacter?.name?.[0] || 'A' }}
+              </div>
+              <div 
+                v-else 
+                class="avatar default-avatar user-avatar"
+              >
+                我
+              </div>
             </div>
-            <div class="bubble" :class="{ typing: message.isTyping }">
+            <div class="message-content">
+              <div class="meta">
+                <span class="role">{{ message.role === 'user' ? '我' : selectedCharacter.name }}</span>
+                <span class="time">{{ formatTime(message.timestamp) }}</span>
+              </div>
+              <div class="bubble" :class="{ typing: message.isTyping }">
+              <!-- 内联播放按钮，直接跟在文字后面 -->
               <p v-if="message.status === 'error'" class="error-text">{{ message.text }}</p>
-              <p v-else>{{ message.text }}</p>
+              <p v-else class="message-text">
+                <span 
+                  :id="`message-text-${message.id}`"
+                  class="text-content"
+                  :data-message-id="message.id"
+                >
+                  {{ message.text }}
+                </span>
+                <!-- 播放按钮直接跟在文字后面 -->
+                <button
+                  v-if="message.audioSegments && message.audioSegments.length === 1"
+                  class="inline-play-btn"
+                  :class="{ playing: currentPlayingId === `${message.id}-0` }"
+                  @click="togglePlaySegment(message.audioSegments[0], message)"
+                  title="播放语音"
+                >
+                  <svg v-if="currentPlayingId !== `${message.id}-0`" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                  </svg>
+                </button>
+              </p>
+              
+              <!-- 多段音频的处理 -->
+              <div v-if="message.audioSegments && message.audioSegments.length > 1" class="multi-audio-segments">
+                <div
+                  v-for="segment in message.audioSegments"
+                  :key="segment.segmentOrder"
+                  class="segment-item"
+                >
+                  <button
+                    class="segment-play-btn"
+                    :class="{ playing: currentPlayingId === `${message.id}-${segment.segmentOrder}` }"
+                    @click="togglePlaySegment(segment, message)"
+                  >
+                    <svg v-if="currentPlayingId !== `${message.id}-${segment.segmentOrder}`" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="4" width="4" height="16"/>
+                      <rect x="14" y="4" width="4" height="16"/>
+                    </svg>
+                  </button>
+                  <span class="segment-label">第 {{ segment.segmentOrder + 1 }} 段</span>
+                </div>
+              </div>
               
               <!-- 图像显示区域 -->
               <div v-if="message.images && message.images.length" class="image-gallery">
@@ -134,26 +238,8 @@
                   </div>
                 </div>
               </div>
-              
-              <div v-if="message.audioSegments && message.audioSegments.length" class="audio-segments">
-                <button
-                  v-if="message.audioSegments.length === 1"
-                  class="segment-btn"
-                  @click="playSegment(message.audioSegments[0])"
-                >
-                  ▶ 播放语音
-                </button>
-                <button
-                  v-else
-                  v-for="segment in message.audioSegments"
-                  :key="segment.segmentOrder"
-                  class="segment-btn"
-                  @click="playSegment(segment)"
-                >
-                  ▶ 播放第 {{ segment.segmentOrder + 1 }} 段
-                </button>
-              </div>
               <div v-if="message.status === 'pending'" class="pending-indicator">识别中...</div>
+              </div>
             </div>
           </div>
         </div>
@@ -161,25 +247,46 @@
 
       <footer class="chat-controls">
         <div class="status-group">
-          <span v-if="isRecording" class="recording-indicator">录音中 {{ recordElapsed }}s</span>
+          <div v-if="isRecording" class="recording-indicator">
+            <span class="recording-text">录音中</span>
+            <div class="audio-visualizer">
+              <div 
+                v-for="i in 20" 
+                :key="i" 
+                class="audio-bar" 
+                :style="{ animationDelay: `${i * 0.1}s`, height: audioLevels[i - 1] + '%' }"
+              ></div>
+            </div>
+            <span class="recording-time">{{ recordElapsed }}s</span>
+          </div>
           <span v-else-if="isProcessing" class="processing-indicator">AI 正在思考...</span>
         </div>
         <div class="control-buttons">
           <button
             class="mic-btn"
-            :class="{ active: isRecording }"
+            :class="{ active: isRecording, recording: isRecording }"
             :disabled="!canRecord"
             @click="toggleRecording"
+            :title="isRecording ? '点击结束录音' : '点击开始录音'"
           >
-            {{ isRecording ? '结束录音' : '按下说话' }}
+            <svg v-if="!isRecording" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+            <span class="mic-text">{{ isRecording ? '停止' : '录音' }}</span>
           </button>
           <button
-            class="stop-btn"
-            v-if="session"
-            @click="endSession"
-            :disabled="sessionClosing"
+            class="new-chat-btn"
+            v-if="selectedCharacter"
+            @click="createNewChat"
+            :disabled="sessionClosing || isProcessing"
           >
-            结束会话
+            新建对话
           </button>
         </div>
       </footer>
@@ -215,6 +322,8 @@ export default {
     const characterList = ref([])
     const loadingCharacters = ref(false)
     const selectedCharacter = ref(null)
+    const characterPanelCollapsed = ref(false)
+    const isSelectingCharacter = ref(false)
     
     // 语言设置相关
     const currentVoiceLanguage = ref('zh')
@@ -236,6 +345,17 @@ export default {
     const mediaStream = ref(null)
     const recordedChunks = ref([])
     const isProcessing = ref(false)
+
+    // 音频可视化相关
+    const audioLevels = ref(Array(20).fill(20)) // 20个音频条的高度
+    const analyser = ref(null)
+    const audioContext = ref(null)
+    const animationFrame = ref(null)
+    
+    // 播放状态管理
+    const currentPlayingId = ref(null)
+    const currentPlayingAudio = ref(null)
+    const playingProgress = ref(0)
 
     const activeMessageId = ref(null)
     const userMessages = reactive(new Map())
@@ -431,19 +551,45 @@ export default {
         return
       }
       
+      isSelectingCharacter.value = true
       selectedCharacter.value = card
       
-      // 初始化语言设置（使用角色卡的默认语言）
-      currentVoiceLanguage.value = card.voiceLanguage || 'zh'
-      currentSubtitleLanguage.value = card.subtitleLanguage || 'zh'
-      
-      await startNewSession() // 创建新会话
+      try {
+        // 初始化语言设置（使用角色卡的默认语言）
+        currentVoiceLanguage.value = card.voiceLanguage || 'zh'
+        currentSubtitleLanguage.value = card.subtitleLanguage || 'zh'
+        
+        await startNewSession() // 创建新会话
+      } finally {
+        isSelectingCharacter.value = false
+      }
     }
     
     // 更新语言设置
     const updateLanguageSettings = () => {
       console.log(`语言设置已更新: 语音=${currentVoiceLanguage.value}, 字幕=${currentSubtitleLanguage.value}`)
       // 这里���以添加任何需要在语言变更时执行的逻辑
+    }
+
+    // 切换角色面板收起状态
+    const toggleCharacterPanel = () => {
+      characterPanelCollapsed.value = !characterPanelCollapsed.value
+    }
+
+    // 创建新对话
+    const createNewChat = async () => {
+      if (!selectedCharacter.value) return
+      
+      // 清除之前的标题
+      chatTitle.value = ''
+      titleTyping.value = false
+      if (titleAnimationTimer.value) {
+        clearInterval(titleAnimationTimer.value)
+        titleAnimationTimer.value = null
+      }
+      
+      // 开始新会话
+      await startNewSession()
     }
 
     const createMessageId = () => {
@@ -819,6 +965,10 @@ export default {
         mediaRecorder.value.start()
         isRecording.value = true
         recordElapsed.value = 0
+        
+        // 初始化音频可视化
+        startAudioVisualization()
+        
         recordTimer.value = setInterval(() => {
           recordElapsed.value += 1
           if (recordElapsed.value >= 30) {
@@ -838,6 +988,10 @@ export default {
       if (!isRecording.value || !mediaRecorder.value) return
       clearInterval(recordTimer.value)
       recordTimer.value = null
+      
+      // 停止音频可视化
+      stopAudioVisualization()
+      
       try {
         mediaRecorder.value.stop()
       } catch (error) {
@@ -1200,24 +1354,58 @@ export default {
       const audio = new Audio(segment.url)
       currentAudio.value = { audio, segment }
       
+      // 设置播放状态，让按钮显示为"播放中"
+      const playId = `${segment.messageId}-${segment.segmentOrder || 0}`
+      currentPlayingId.value = playId
+      currentPlayingAudio.value = audio
+      
+      // 找到对应的消息进行文字染色
+      const messageId = segment.messageId
+      const assistantMessage = assistantMessages.get(messageId)
+      const messageText = assistantMessage?.text || ''
+      
+      // 监听播放进度，实现文字染色效果
+      audio.addEventListener('timeupdate', () => {
+        if (audio.duration > 0) {
+          const progress = (audio.currentTime / audio.duration)
+          playingProgress.value = progress * 100
+          updateTextHighlight(messageId, progress, messageText)
+        }
+      })
+      
       audio.onloadeddata = () => {
         console.log('音频数据加载完成:', { duration: audio.duration, segmentOrder: segment.segmentOrder })
       }
       
       audio.onended = () => {
         console.log('音频播放结束:', { segmentOrder: segment.segmentOrder })
+        // 清理状态
+        clearTextHighlight(messageId)
+        currentPlayingId.value = null
+        currentPlayingAudio.value = null
+        playingProgress.value = 0
         currentAudio.value = null
         playNextAudio()
       }
       
       audio.onerror = (error) => {
         console.error('音频播放错误:', { segmentOrder: segment.segmentOrder, error })
+        // 清理状态
+        clearTextHighlight(messageId)
+        currentPlayingId.value = null
+        currentPlayingAudio.value = null
+        playingProgress.value = 0
         currentAudio.value = null
         playNextAudio()
       }
       
       audio.play().catch(error => {
         console.warn('自动播放失败', { segmentOrder: segment.segmentOrder, error })
+        // 清理状态
+        clearTextHighlight(messageId)
+        currentPlayingId.value = null
+        currentPlayingAudio.value = null
+        playingProgress.value = 0
         currentAudio.value = null
         playNextAudio()
       })
@@ -1229,6 +1417,128 @@ export default {
       audio.play().catch(error => {
         console.warn('手动播放失败', error)
       })
+    }
+
+    // 切换播放/暂停音频片段
+    const togglePlaySegment = (segment, message) => {
+      if (!segment?.url) return
+      
+      const playId = `${message.id}-${segment.segmentOrder || 0}`
+      
+      // 如果当前有其他音频在播放，先停止
+      if (currentPlayingAudio.value && currentPlayingId.value !== playId) {
+        currentPlayingAudio.value.pause()
+        const oldMessageId = currentPlayingId.value.split('-')[0]
+        clearTextHighlight(oldMessageId)
+        currentPlayingAudio.value = null
+        currentPlayingId.value = null
+        playingProgress.value = 0
+      }
+      
+      // 如果是同一个音频，切换播放/暂停
+      if (currentPlayingId.value === playId) {
+        if (currentPlayingAudio.value) {
+          if (currentPlayingAudio.value.paused) {
+            // 恢复播放
+            currentPlayingAudio.value.play().catch(console.warn)
+          } else {
+            // 暂停播放
+            currentPlayingAudio.value.pause()
+            // 暂停时清除播放状态，让按钮变回播放状态
+            clearTextHighlight(message.id)
+            currentPlayingAudio.value = null
+            currentPlayingId.value = null
+            playingProgress.value = 0
+          }
+        }
+        return
+      }
+      
+      // 播放新音频
+      const audio = new Audio(segment.url)
+      currentPlayingAudio.value = audio
+      currentPlayingId.value = playId
+      
+      // 监听播放进度，实现文字染色效果
+      audio.addEventListener('timeupdate', () => {
+        if (audio.duration > 0) {
+          const progress = (audio.currentTime / audio.duration)
+          playingProgress.value = progress * 100
+          updateTextHighlight(message.id, progress, message.text)
+        }
+      })
+      
+      // 播放结束时清理状态
+      audio.addEventListener('ended', () => {
+        clearTextHighlight(message.id)
+        currentPlayingAudio.value = null
+        currentPlayingId.value = null
+        playingProgress.value = 0
+      })
+      
+      // 播放失败时清理状态
+      audio.addEventListener('error', () => {
+        clearTextHighlight(message.id)
+        currentPlayingAudio.value = null
+        currentPlayingId.value = null
+        playingProgress.value = 0
+      })
+      
+      // 暂停事件监听器
+      audio.addEventListener('pause', () => {
+        // 当音频被暂停时，不自动清理状态
+        // 只有在手动停止时才清理状态
+      })
+      
+      audio.play().catch(error => {
+        console.warn('音频播放失败', error)
+        clearTextHighlight(message.id)
+        currentPlayingAudio.value = null
+        currentPlayingId.value = null
+        playingProgress.value = 0
+      })
+    }
+
+    // 更新文字高亮效果 - 像字幕一样
+    const updateTextHighlight = (messageId, progress, text) => {
+      const textElement = document.getElementById(`message-text-${messageId}`)
+      console.log('updateTextHighlight:', { messageId, progress, text, textElement })
+      
+      if (!textElement || !text) {
+        console.warn('文本元素未找到或文本为空:', { messageId, textElement, text })
+        return
+      }
+      
+      // 计算应该高亮到哪个字符
+      const textLength = text.length
+      const highlightedLength = Math.floor(textLength * progress)
+      
+      console.log('高亮计算:', { textLength, progress, highlightedLength })
+      
+      if (highlightedLength >= textLength) {
+        // 全部高亮
+        textElement.innerHTML = `<span class="subtitle-highlighted">${text}</span>`
+      } else if (highlightedLength <= 0) {
+        // 没有高亮
+        textElement.innerHTML = text
+      } else {
+        // 部分高亮
+        const highlightedText = text.substring(0, highlightedLength)
+        const remainingText = text.substring(highlightedLength)
+        textElement.innerHTML = `<span class="subtitle-highlighted">${highlightedText}</span><span class="subtitle-remaining">${remainingText}</span>`
+      }
+    }
+
+    // 清除文字高亮效果
+    const clearTextHighlight = (messageId) => {
+      const textElement = document.getElementById(`message-text-${messageId}`)
+      console.log('clearTextHighlight:', { messageId, textElement })
+      
+      if (textElement) {
+        // 获取原始文本内容
+        const originalText = textElement.getAttribute('data-original-text') || textElement.textContent || textElement.innerText
+        textElement.innerHTML = originalText
+      }
     }
     
     // 查看图像全屏
@@ -1757,6 +2067,66 @@ export default {
       clearAudioQueue()
     })
 
+    // 音频可视化函数
+    const startAudioVisualization = () => {
+      if (!mediaStream.value) return
+      
+      try {
+        audioContext.value = new (window.AudioContext || window.webkitAudioContext)()
+        const source = audioContext.value.createMediaStreamSource(mediaStream.value)
+        analyser.value = audioContext.value.createAnalyser()
+        
+        analyser.value.fftSize = 256
+        const dataArray = new Uint8Array(analyser.value.frequencyBinCount)
+        
+        source.connect(analyser.value)
+        
+        const updateLevels = () => {
+          if (!isRecording.value || !analyser.value) return
+          
+          analyser.value.getByteFrequencyData(dataArray)
+          
+          // 计算平均音量
+          let sum = 0
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i]
+          }
+          const average = sum / dataArray.length
+          
+          // 生成20个音频条的随机但基于音量的高度
+          const newLevels = audioLevels.value.map((_, index) => {
+            const baseHeight = Math.max(5, average / 2.55) // 将0-255转换为0-100，最小5%
+            const randomFactor = 0.5 + Math.random() * 0.5 // 0.5-1.0的随机因子
+            const variation = Math.sin((Date.now() + index * 100) / 200) * 20 // 添加波动效果
+            return Math.min(100, Math.max(5, baseHeight * randomFactor + variation))
+          })
+          
+          audioLevels.value = newLevels
+          
+          animationFrame.value = requestAnimationFrame(updateLevels)
+        }
+        
+        updateLevels()
+      } catch (error) {
+        console.warn('音频可视化初始化失败', error)
+      }
+    }
+
+    const stopAudioVisualization = () => {
+      if (animationFrame.value) {
+        cancelAnimationFrame(animationFrame.value)
+        animationFrame.value = null
+      }
+      
+      if (audioContext.value) {
+        audioContext.value.close()
+        audioContext.value = null
+      }
+      
+      analyser.value = null
+      audioLevels.value = Array(20).fill(20) // 重置为默认高度
+    }
+
     return {
       // 角色卡相关
       searchKeyword,
@@ -1764,8 +2134,12 @@ export default {
       filteredCharacters,
       loadingCharacters,
       selectedCharacter,
+      characterPanelCollapsed,
+      isSelectingCharacter,
       selectCharacter,
       fetchCharacters,
+      toggleCharacterPanel,
+      createNewChat,
 
       // 会话相关
       session,
@@ -1781,7 +2155,13 @@ export default {
       canRecord,
       toggleRecording,
       playSegment,
+      togglePlaySegment,
       viewImageFullscreen,
+      
+      // 音频可视化
+      audioLevels,
+      currentPlayingId,
+      playingProgress,
       
       // 其他
       formatTime,
@@ -1809,6 +2189,32 @@ export default {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  position: relative;
+}
+
+.floating-expand-btn {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  z-index: 10;
+  transition: all 0.3s ease;
+
+  &:hover {
+    background: var(--primary-dark);
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+  }
 }
 
 .history-panel {
@@ -1981,6 +2387,15 @@ export default {
   flex-direction: column;
   padding: 1.25rem;
   gap: 1rem;
+  transition: width 0.3s ease, transform 0.3s ease;
+  position: relative;
+
+  &.collapsed {
+    width: 0;
+    padding: 0;
+    overflow: hidden;
+    transform: translateX(-100%);
+  }
 }
 
 .panel-header {
@@ -1994,23 +2409,48 @@ export default {
   }
 }
 
-.refresh-btn,
 .search-btn {
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--border-light);
+  padding: 0.5rem;
+  border: none;
   border-radius: 6px;
-  background: var(--background-tertiary);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
 
   &:hover {
-    background: rgba(99, 102, 241, 0.12);
+    background: var(--background-tertiary);
+    color: var(--primary-color);
   }
 
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+.collapse-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: var(--background-tertiary);
+    color: var(--text-secondary);
   }
 }
 
@@ -2035,42 +2475,65 @@ export default {
   gap: 0.75rem;
 
   &.loading {
-    justify-content: center;
-    align-items: center;
+    justify-content: flex-start;
+    align-items: flex-start;
     color: var(--text-secondary);
+    background: transparent;
+  }
+
+  .loading-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    background: transparent;
+
+    .loading-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-light);
+      border-top: 2px solid var(--primary-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      flex-shrink: 0;
+    }
   }
 }
 
 .character-item {
   background: var(--background-primary);
-  border-radius: 12px;
-  padding: 0.9rem;
+  border-radius: 8px;
+  padding: 0.75rem;
   border: 1px solid transparent;
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.2s ease;
 
   &:hover {
     border-color: rgba(99, 102, 241, 0.4);
-    transform: translateY(-2px);
+    transform: translateY(-1px);
   }
 
   &.active {
     border-color: var(--primary-color);
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.2);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
   }
 
   .item-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 0.375rem;
+    
     h4 {
       margin: 0;
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: var(--text-primary);
     }
     .tag {
-      font-size: 0.75rem;
-      padding: 0.1rem 0.4rem;
+      font-size: 0.7rem;
+      padding: 0.125rem 0.375rem;
       background: rgba(99, 102, 241, 0.18);
       color: var(--primary-color);
       border-radius: 999px;
@@ -2078,15 +2541,16 @@ export default {
   }
 
   .item-desc {
-    margin: 0.25rem 0;
+    margin: 0 0 0.375rem;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    line-height: 1.3;
   }
 
   .item-meta {
     display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
+    justify-content: flex-end;
+    font-size: 0.75rem;
     color: var(--text-tertiary);
   }
 }
@@ -2107,22 +2571,23 @@ export default {
 }
 
 .chat-header {
-  padding: 1.5rem;
+  padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 1rem;
 
   h2 {
-    margin: 0 0 0.25rem;
-    font-size: 1.4rem;
+    margin: 0;
+    font-size: 1.3rem;
     color: var(--text-primary);
   }
 
   p {
-    margin: 0;
+    margin: 0.25rem 0 0;
     color: var(--text-secondary);
+    font-size: 0.9rem;
   }
 
   // 标题显示区域
@@ -2131,7 +2596,7 @@ export default {
     
     .chat-title {
       display: inline-block;
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: var(--primary-color);
       font-weight: 500;
       
@@ -2161,10 +2626,27 @@ export default {
     font-size: 0.8rem;
     background: rgba(99, 102, 241, 0.18);
     color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 
     &.active {
       background: rgba(34, 197, 94, 0.18);
       color: #22c55e;
+    }
+
+    &.connecting {
+      background: rgba(251, 191, 36, 0.18);
+      color: #f59e0b;
+    }
+
+    .connecting-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid transparent;
+      border-top: 2px solid currentColor;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
   }
 
@@ -2191,15 +2673,52 @@ export default {
 
 .message {
   display: flex;
-  flex-direction: column;
+  gap: 0.75rem;
   max-width: 80%;
+  align-items: flex-start;
 
   &.assistant {
     align-self: flex-start;
+    flex-direction: row;
   }
 
   &.user {
     align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  .message-avatar {
+    flex-shrink: 0;
+    
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border-light);
+      
+      &.default-avatar {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: white;
+        
+        &.user-avatar {
+          background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+        }
+        
+        &.assistant-avatar {
+          background: linear-gradient(135deg, #10b981, #059669);
+        }
+      }
+    }
+  }
+
+  .message-content {
+    flex: 1;
+    min-width: 0;
   }
 
   .meta {
@@ -2246,23 +2765,105 @@ export default {
   }
 }
 
-.audio-segments {
+/* 内联播放按钮样式 */
+.inline-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  margin-left: 0.5rem;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  vertical-align: baseline;
+
+  &:hover {
+    color: var(--primary-color);
+    background: rgba(99, 102, 241, 0.1);
+  }
+
+  &.playing {
+    color: #ef4444;
+    
+    &:hover {
+      color: #dc2626;
+      background: rgba(239, 68, 68, 0.1);
+    }
+  }
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* 字幕高亮效果 */
+.subtitle-highlighted {
+  background: linear-gradient(120deg, #3b82f6 0%, #8b5cf6 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  transition: all 0.1s ease;
+}
+
+.subtitle-remaining {
+  color: var(--text-secondary);
+  opacity: 0.7;
+  transition: all 0.1s ease;
+}
+
+/* 多段音频样式 */
+.multi-audio-segments {
   margin-top: 0.5rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.5rem;
 
-  .segment-btn {
+  .segment-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
     padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    background: rgba(99, 102, 241, 0.05);
     border-radius: 6px;
-    border: 1px solid var(--border-light);
-    background: var(--background-primary);
-    cursor: pointer;
-    transition: background 0.2s ease;
+    border: 1px solid rgba(99, 102, 241, 0.1);
 
-    &:hover {
-      background: rgba(99, 102, 241, 0.2);
+    .segment-play-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border: none;
+      background: transparent;
+      color: #9ca3af;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: all 0.2s ease;
+
+      &:hover {
+        color: var(--primary-color);
+      }
+
+      &.playing {
+        color: #ef4444;
+      }
+
+      svg {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    .segment-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
     }
   }
 }
@@ -2383,6 +2984,17 @@ export default {
   100% { transform: rotate(360deg); }
 }
 
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 10px 24px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 15px 35px rgba(239, 68, 68, 0.5);
+  }
+}
+
 .chat-controls {
   padding: 1.25rem 1.5rem;
   border-top: 1px solid var(--border-light);
@@ -2396,7 +3008,37 @@ export default {
   color: var(--text-secondary);
 
   .recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
     color: #ef4444;
+    font-weight: 500;
+
+    .recording-text {
+      font-size: 0.9rem;
+    }
+
+    .recording-time {
+      font-size: 0.85rem;
+      opacity: 0.8;
+    }
+
+    .audio-visualizer {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 20px;
+      min-width: 100px;
+
+      .audio-bar {
+        width: 3px;
+        background: linear-gradient(to top, #ef4444, #fca5a5);
+        border-radius: 2px;
+        min-height: 2px;
+        transition: height 0.1s ease;
+        animation: audioWave 1.5s ease-in-out infinite;
+      }
+    }
   }
 
   .processing-indicator {
@@ -2426,16 +3068,34 @@ export default {
     background: var(--primary-color);
     color: #fff;
     box-shadow: 0 10px 24px rgba(99, 102, 241, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 50px;
+    padding: 0.8rem 1.6rem;
+    position: relative;
 
-    &.active {
+    &.recording {
       background: #ef4444;
       box-shadow: 0 10px 24px rgba(239, 68, 68, 0.3);
+      animation: pulse 2s infinite;
+    }
+
+    .mic-text {
+      font-size: 0.9rem;
+      font-weight: 500;
     }
   }
 
-  .stop-btn {
+  .new-chat-btn {
     background: var(--background-secondary);
     color: var(--text-primary);
+    border: 1px solid var(--border-light);
+
+    &:hover:not(:disabled) {
+      background: var(--background-tertiary);
+      border-color: var(--primary-color);
+    }
   }
 }
 
@@ -2451,52 +3111,110 @@ export default {
   }
 }
 
+/* 头部顶部布局 */
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+}
+
 /* 语言设置样式 */
 .language-settings {
   display: flex;
-  gap: 1rem;
-  margin: 0.75rem 0;
-  padding: 0.75rem;
-  background: var(--background-secondary);
-  border-radius: 0.5rem;
-  border: 1px solid var(--border-light);
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .language-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.375rem;
 }
 
 .language-label {
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .language-select {
-  padding: 0.375rem 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.375rem;
-  background: var(--surface-color);
+  padding: 0.25rem 0.125rem;
+  border: none;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  background: transparent;
   color: var(--text-primary);
-  font-size: 0.875rem;
-  min-width: 80px;
+  font-size: 0.8rem;
+  min-width: 60px;
   
   &:focus {
     outline: none;
-    border-color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+  }
+  
+  &:hover {
+    border-bottom-color: var(--text-secondary);
   }
 }
 
 /* 闪烁光标动画 */
+/* 历史加载动画样式 */
+.history-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  
+  .history-loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--border-light);
+    border-top: 3px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+}
+
+/* 场景描述样式 */
+.scene-description {
+  padding: 2rem 1rem;
+  text-align: center;
+  
+  .scenario-text,
+  .default-scene {
+    font-style: italic;
+    color: var(--text-tertiary);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    opacity: 0.8;
+    
+    em {
+      font-style: italic;
+    }
+  }
+}
+
 @keyframes blink {
   0%, 50% {
     opacity: 1;
   }
   51%, 100% {
     opacity: 0;
+  }
+}
+
+@keyframes audioWave {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
   }
 }
 </style>
