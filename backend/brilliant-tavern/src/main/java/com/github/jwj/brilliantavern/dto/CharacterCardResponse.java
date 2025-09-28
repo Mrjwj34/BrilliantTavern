@@ -26,7 +26,10 @@ public class CharacterCardResponse {
     private String greetingMessage;
     private Boolean isPublic;
     private Integer likesCount;
+    private Integer commentsCount;
     private String ttsVoiceId;
+    private String voiceLanguage;
+    private String subtitleLanguage;
     private String avatarUrl;
     private CharacterCardDataDto cardData;
     private OffsetDateTime createdAt;
@@ -75,7 +78,10 @@ public class CharacterCardResponse {
                 .greetingMessage(card.getGreetingMessage())
                 .isPublic(card.getIsPublic())
                 .likesCount(card.getLikesCount())
+                .commentsCount(card.getCommentsCount())
                 .ttsVoiceId(card.getTtsVoiceId())
+                .voiceLanguage(card.getVoiceLanguage())
+                .subtitleLanguage(card.getSubtitleLanguage())
                 .avatarUrl(card.getAvatarUrl())
                 .createdAt(card.getCreatedAt())
                 .updatedAt(card.getUpdatedAt())

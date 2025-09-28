@@ -43,6 +43,16 @@ public class CreateCharacterCardRequest {
     @Size(max = 100, message = "TTS音色ID不能超过100个字符")
     private String ttsVoiceId;
 
+    @Schema(description = "语音语言", example = "zh", allowableValues = {"zh", "ja", "en"})
+    @Size(max = 10, message = "语音语言不能超过10个字符")
+    @Builder.Default
+    private String voiceLanguage = "zh";
+
+    @Schema(description = "字幕语言", example = "zh")
+    @Size(max = 10, message = "字幕语言不能超过10个字符")
+    @Builder.Default
+    private String subtitleLanguage = "zh";
+
     @Schema(description = "角色头像URL", example = "https://example.com/avatar.jpg")
     @Size(max = 500, message = "头像URL不能超过500个字符")
     private String avatarUrl;

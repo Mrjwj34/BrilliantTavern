@@ -53,8 +53,9 @@ public class VoiceWebSocketController {
             }
 
             if (log.isInfoEnabled()) {
-                log.info("语音消息准备处理，会话: {}，消息: {}，音频字节数: {}，格式: {}", sessionId,
-                        voiceMessage.getMessageId(), voiceMessage.getAudioData().length, voiceMessage.getAudioFormat());
+                log.info("语音消息准备处理，会话: {}，消息: {}，音频字节数: {}，格式: {}，语音语言: {}，字幕语言: {}", sessionId,
+                        voiceMessage.getMessageId(), voiceMessage.getAudioData().length, voiceMessage.getAudioFormat(),
+                        voiceMessage.getVoiceLanguage(), voiceMessage.getSubtitleLanguage());
             }
 
             if (voiceMessage.getMessageId() == null) {
@@ -93,6 +94,8 @@ public class VoiceWebSocketController {
             .audioFormat(audioFormat)
             .messageId((String) voiceData.get("messageId"))
             .timestamp(timestamp)
+            .voiceLanguage((String) voiceData.get("voiceLanguage"))
+            .subtitleLanguage((String) voiceData.get("subtitleLanguage"))
             .build();
     }
 

@@ -48,6 +48,32 @@
           <h2>轮次语音对话</h2>
           <p v-if="selectedCharacter">当前角色：{{ selectedCharacter.name }}</p>
           <p v-else>请选择角色后开始对话</p>
+          
+          <!-- 语言设置区域 -->
+          <div v-if="selectedCharacter" class="language-settings">
+            <div class="language-item">
+              <label class="language-label">语音语言：</label>
+              <select v-model="currentVoiceLanguage" class="language-select" @change="updateLanguageSettings">
+                <option value="zh">中文</option>
+                <option value="ja">日文</option>
+                <option value="en">英文</option>
+              </select>
+            </div>
+            <div class="language-item">
+              <label class="language-label">字幕语言：</label>
+              <select v-model="currentSubtitleLanguage" class="language-select" @change="updateLanguageSettings">
+                <option value="zh">中文</option>
+                <option value="ja">日文</option>
+                <option value="en">英文</option>
+                <option value="ko">韩文</option>
+                <option value="fr">法文</option>
+                <option value="de">德文</option>
+                <option value="es">西班牙文</option>
+                <option value="ru">俄文</option>
+              </select>
+            </div>
+          </div>
+          
           <!-- 标题显示区域 -->
           <div v-if="chatTitle" class="chat-title-area">
             <span class="chat-title" :class="{ typing: titleTyping }">
@@ -146,7 +172,7 @@ import {
   inject
 } from 'vue'
 import { characterCardAPI, voiceChatAPI } from '@/api'
-import { format, notification } from '@/utils'
+import { format, notification, storage } from '@/utils'
 
 export default {
   name: 'RoundVoiceChat',
@@ -159,6 +185,10 @@ export default {
     const characterList = ref([])
     const loadingCharacters = ref(false)
     const selectedCharacter = ref(null)
+    
+    // 语言设置相关
+    const currentVoiceLanguage = ref('zh')
+    const currentSubtitleLanguage = ref('zh')
 
     // 会话相关
     const session = ref(null)
@@ -354,7 +384,18 @@ export default {
         return
       }
       selectedCharacter.value = card
+      
+      // 初始化语言设置（使用角色卡的默认语言）
+      currentVoiceLanguage.value = card.voiceLanguage || 'zh'
+      currentSubtitleLanguage.value = card.subtitleLanguage || 'zh'
+      
       await startNewSession() // 创建新会话
+    }
+    
+    // 更新语言设置
+    const updateLanguageSettings = () => {
+      console.log(`语言设置已更新: 语音=${currentVoiceLanguage.value}, 字幕=${currentSubtitleLanguage.value}`)
+      // 这里���以添加任何需要在语言变更时执行的逻辑
     }
 
     const createMessageId = () => {
@@ -506,6 +547,14 @@ export default {
         }
         return endpoint
       }
+      
+      // 获取token用于WebSocket认证
+      const token = storage.get('token')
+      const connectHeaders = {}
+      if (token) {
+        connectHeaders.Authorization = `Bearer ${token}`
+      }
+      
       const client = new Client({
         webSocketFactory: () => {
           if (typeof window !== 'undefined' && 'WebSocket' in window) {
@@ -524,6 +573,7 @@ export default {
             : (typeof window !== 'undefined' ? `${window.location.origin}${endpoint}` : endpoint)
           return new SockJS(sockJsUrl)
         },
+        connectHeaders: connectHeaders,
         reconnectDelay: 5000,
         debug: (msg) => {
           console.debug('[STOMP]', msg)
@@ -773,6 +823,8 @@ export default {
             messageId,
             audioFormat: extractFormat(mimeType),
             audioData: base64Audio,
+            voiceLanguage: currentVoiceLanguage.value,
+            subtitleLanguage: currentSubtitleLanguage.value,
             timestamp: Date.now()
           })
         })
@@ -1339,7 +1391,12 @@ export default {
       
       // 标题相关
       chatTitle,
-      titleTyping
+      titleTyping,
+      
+      // 语言设置相关
+      currentVoiceLanguage,
+      currentSubtitleLanguage,
+      updateLanguageSettings
     }
   }
 }
@@ -1876,6 +1933,45 @@ export default {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border-light);
+  }
+}
+
+/* 语言设置样式 */
+.language-settings {
+  display: flex;
+  gap: 1rem;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: var(--background-secondary);
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-light);
+}
+
+.language-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.language-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.language-select {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  min-width: 80px;
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
   }
 }
 

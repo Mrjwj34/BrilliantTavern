@@ -83,7 +83,7 @@ jwt:
 app:
   # TTS服务配置
   tts:
-    base-url: ${TTS_SERVICE_URL}  # TTS服务基础URL
+    base-url: ${TTS_SERVICE_URL:http://localhost:9880}  # TTS服务基础URL
     timeout: 30s
     # 音频配置
     audio:

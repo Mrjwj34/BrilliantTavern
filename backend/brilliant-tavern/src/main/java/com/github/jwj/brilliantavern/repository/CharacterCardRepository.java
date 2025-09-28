@@ -4,6 +4,7 @@ import com.github.jwj.brilliantavern.entity.CharacterCard;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -79,4 +80,18 @@ public interface CharacterCardRepository extends JpaRepository<CharacterCard, UU
     @Query("SELECT c FROM CharacterCard c INNER JOIN UserLike ul ON c.id = ul.cardId " +
            "WHERE ul.userId = :userId ORDER BY ul.createdAt DESC")
     Page<CharacterCard> findLikedCardsByUser(@Param("userId") UUID userId, Pageable pageable);
+
+    /**
+     * 增加角色卡评论数
+     */
+    @Modifying
+    @Query("UPDATE CharacterCard c SET c.commentsCount = c.commentsCount + 1 WHERE c.id = :cardId")
+    int incrementCommentsCount(@Param("cardId") UUID cardId);
+
+    /**
+     * 减少角色卡评论数
+     */
+    @Modifying
+    @Query("UPDATE CharacterCard c SET c.commentsCount = CASE WHEN c.commentsCount > 0 THEN c.commentsCount - 1 ELSE 0 END WHERE c.id = :cardId")
+    int decrementCommentsCount(@Param("cardId") UUID cardId);
 }

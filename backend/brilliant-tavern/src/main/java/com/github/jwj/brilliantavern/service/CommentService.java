@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.service;
 import com.github.jwj.brilliantavern.dto.comment.CommentDTO;
 import com.github.jwj.brilliantavern.dto.comment.CommentQueryRequest;
 import com.github.jwj.brilliantavern.dto.comment.CreateCommentRequest;
+import com.github.jwj.brilliantavern.dto.comment.CommentPageResponse;
 import com.github.jwj.brilliantavern.entity.CardComment;
 import com.github.jwj.brilliantavern.entity.CharacterCard;
 import com.github.jwj.brilliantavern.entity.CommentLike;
@@ -20,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -78,6 +81,12 @@ public class CommentService {
         
         CardComment savedComment = commentRepository.save(comment);
         
+        // 如果是主评论（非回复），则更新角色卡的评论数
+        if (request.getParentCommentId() == null) {
+            characterCardRepository.incrementCommentsCount(request.getCardId());
+            log.info("已更新角色卡 {} 的评论数 +1", request.getCardId());
+        }
+        
         log.info("创建评论成功: commentId={}, cardId={}, authorId={}, parentId={}", 
                 savedComment.getId(), request.getCardId(), currentUser.getId(), request.getParentCommentId());
         
@@ -88,16 +97,33 @@ public class CommentService {
      * 获取角色卡的评论列表（分页）
      */
     public List<CommentDTO> getComments(CommentQueryRequest request, UUID currentUserId) {
+        CommentPageResponse response = getCommentsWithPagination(request, currentUserId);
+        return response.getComments();
+    }
+    
+    /**
+     * 获取角色卡的评论列表（包含分页信息）
+     */
+    public CommentPageResponse getCommentsWithPagination(CommentQueryRequest request, UUID currentUserId) {
         CharacterCard card = characterCardRepository.findById(request.getCardId())
                 .orElseThrow(() -> new BusinessException("角色卡不存在"));
         
+        // 获取总评论数
+        Long totalCount = commentRepository.countTopLevelCommentsByCardId(request.getCardId());
+        
         PageRequest pageRequest = PageRequest.of(request.getPage(), request.getSize());
         
-        Slice<CardComment> comments;
+        List<CardComment> allComments = new ArrayList<>();
+        boolean hasMore = false;
+        
         if (request.getCursor() != null) {
-            // 使用游标分页
+            // 使用游标分页 - 只获取非置顶评论
             CardComment cursorComment = commentRepository.findById(request.getCursor())
                     .orElseThrow(() -> new BusinessException("游标评论不存在"));
+            
+            log.debug("游标分页查询: cardId={}, cursor={}, cursorCreatedAt={}, sortBy={}, sortOrder={}", 
+                    request.getCardId(), request.getCursor(), cursorComment.getCreatedAt(), 
+                    request.getSortBy(), request.getSortOrder());
             
             List<CardComment> commentList = commentRepository.findTopLevelCommentsByCursor(
                     request.getCardId(),
@@ -105,22 +131,39 @@ public class CommentService {
                     request.getSortOrder(),
                     request.getCursor(),
                     cursorComment.getLikesCount(),
+                    cursorComment.getCreatedAt(),
                     pageRequest
             );
             
-            // 将List转换为Slice（简化处理）
-            comments = new org.springframework.data.domain.SliceImpl<>(commentList, pageRequest, commentList.size() == request.getSize());
+            log.debug("游标分页查询结果: 找到 {} 条评论", commentList.size());
+            
+            allComments.addAll(commentList);
+            hasMore = commentList.size() == request.getSize();
         } else {
-            // 普通分页
-            comments = commentRepository.findTopLevelCommentsByCardId(
+            // 第一页：先获取置顶评论，再获取普通评论
+            Slice<CardComment> normalComments = commentRepository.findTopLevelCommentsByCardId(
                     request.getCardId(),
                     request.getSortBy(),
                     request.getSortOrder(),
                     pageRequest
             );
+            
+            allComments.addAll(normalComments.getContent());
+            hasMore = normalComments.hasNext();
         }
         
-        return convertToDTOList(comments.getContent(), currentUserId, card.getCreatorId());
+        // 创建一个模拟的Slice
+        Slice<CardComment> comments = new org.springframework.data.domain.SliceImpl<>(allComments, pageRequest, hasMore);
+        
+        List<CommentDTO> commentDTOs = convertToDTOList(comments.getContent(), currentUserId, card.getCreatorId());
+        
+        return CommentPageResponse.builder()
+                .comments(commentDTOs)
+                .totalCount(totalCount)
+                .currentPageSize(commentDTOs.size())
+                .hasMore(hasMore)
+                .nextCursor(hasMore && !commentDTOs.isEmpty() ? commentDTOs.get(commentDTOs.size() - 1).getId() : null)
+                .build();
     }
     
     /**
@@ -202,8 +245,17 @@ public class CommentService {
             throw new BusinessException("无权删除此评论");
         }
         
+        // 如果删除的是主评论（非回复），则更新角色卡的评论数
+        boolean isMainComment = comment.getParentCommentId() == null;
+        
         // 删除评论（级联删除回复和点赞）
         commentRepository.delete(comment);
+        
+        // 更新角色卡评论数
+        if (isMainComment) {
+            characterCardRepository.decrementCommentsCount(comment.getCardId());
+            log.info("已更新角色卡 {} 的评论数 -1", comment.getCardId());
+        }
         
         log.info("删除评论: commentId={}, cardId={}, operatorId={}", commentId, comment.getCardId(), userId);
     }
@@ -243,11 +295,19 @@ public class CommentService {
                 .collect(Collectors.toMap(User::getId, user -> user));
         
         // 批量查询回复数量
-        Map<Long, Long> repliesCountMap = commentIds.stream()
-                .collect(Collectors.toMap(
-                        id -> id,
-                        id -> commentRepository.countRepliesByParentId(id)
-                ));
+        Map<Long, Long> repliesCountMap = new HashMap<>();
+        if (!commentIds.isEmpty()) {
+            List<Object[]> repliesCounts = commentRepository.countRepliesByParentIds(commentIds);
+            for (Object[] result : repliesCounts) {
+                Long parentId = (Long) result[0];
+                Long count = (Long) result[1];
+                repliesCountMap.put(parentId, count);
+            }
+            // 确保所有评论ID都有对应的计数（没有回复的评论设为0）
+            for (Long commentId : commentIds) {
+                repliesCountMap.putIfAbsent(commentId, 0L);
+            }
+        }
         
         return comments.stream()
                 .map(comment -> convertToDTO(comment, currentUserId, cardCreatorId, 

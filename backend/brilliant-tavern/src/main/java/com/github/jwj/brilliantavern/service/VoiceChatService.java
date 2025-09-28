@@ -400,6 +400,8 @@ public class VoiceChatService {
                 .isPublic(original.getIsPublic())
                 .likesCount(original.getLikesCount())
                 .ttsVoiceId(original.getTtsVoiceId())
+                .voiceLanguage(original.getVoiceLanguage())
+                .subtitleLanguage(original.getSubtitleLanguage())
                 .avatarUrl(original.getAvatarUrl())
                 .cardData(original.getCardData())
                 .createdAt(original.getCreatedAt())

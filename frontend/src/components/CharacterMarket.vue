@@ -298,6 +298,53 @@
                     placeholder="选择语音音色（可选）"
                   />
                 </div>
+
+                <!-- 语言设置 -->
+                <div class="form-group">
+                  <label>语言设置</label>
+                  <div v-if="editMode" class="language-setting-container">
+                    <div class="language-item">
+                      <label class="language-label">语音语言</label>
+                      <select 
+                        v-model="editForm.voiceLanguage" 
+                        class="language-select"
+                      >
+                        <option value="zh">中文</option>
+                        <option value="ja">日文</option>
+                        <option value="en">英文</option>
+                      </select>
+                    </div>
+                    <div class="language-item">
+                      <label class="language-label">字幕语言</label>
+                      <select 
+                        v-model="editForm.subtitleLanguage" 
+                        class="language-select"
+                      >
+                        <option value="zh">中文</option>
+                        <option value="ja">日文</option>
+                        <option value="en">英文</option>
+                        <option value="ko">韩文</option>
+                        <option value="fr">法文</option>
+                        <option value="de">德文</option>
+                        <option value="es">西班牙文</option>
+                        <option value="ru">俄文</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div v-else class="language-display">
+                    <div class="language-info">
+                      <span class="language-type">语音语言：</span>
+                      <span class="language-value">{{ getLanguageDisplayName(selectedCard?.voiceLanguage || 'zh') }}</span>
+                    </div>
+                    <div class="language-info">
+                      <span class="language-type">字幕语言：</span>
+                      <span class="language-value">{{ getLanguageDisplayName(selectedCard?.subtitleLanguage || 'zh') }}</span>
+                    </div>
+                  </div>
+                  <div class="language-description">
+                    <span class="description-text">语音语言决定TTS发音，字幕语言决定界面显示文字</span>
+                  </div>
+                </div>
               </div>
               
               <!-- 角色卡数据 -->
@@ -546,6 +593,8 @@ export default {
       greetingMessage: '',
       isPublic: true,
       ttsVoiceId: '',
+      voiceLanguage: 'zh',
+      subtitleLanguage: 'zh',
       avatarUrl: '', // 新增头像字段
       cardData: {
         description: '',
@@ -648,6 +697,16 @@ export default {
         return name.includes(keyword) || id.includes(keyword)
       })
     })
+
+    // 语言代码转显示名称
+    const getLanguageDisplayName = (languageCode) => {
+      const languageMap = {
+        'zh': '中文',
+        'ja': '日文', 
+        'en': '英文'
+      }
+      return languageMap[languageCode] || languageCode
+    }
 
     // 获取角色卡数据
     const fetchCards = async (reset = false) => {
@@ -832,6 +891,8 @@ export default {
       editForm.greetingMessage = card.greetingMessage || ''
       editForm.isPublic = card.isPublic !== undefined ? card.isPublic : true
       editForm.ttsVoiceId = card.ttsVoiceId || ''
+      editForm.voiceLanguage = card.voiceLanguage || 'zh'
+      editForm.subtitleLanguage = card.subtitleLanguage || 'zh'
       // 保留原有头像URL用于显示
       editForm.avatarUrl = card.avatarUrl || ''
       
@@ -903,6 +964,8 @@ export default {
           greetingMessage: editForm.greetingMessage,
           isPublic: editForm.isPublic,
           ttsVoiceId: editForm.ttsVoiceId,
+          voiceLanguage: editForm.voiceLanguage,
+          subtitleLanguage: editForm.subtitleLanguage,
           avatarUrl: editForm.avatarUrl, // 添加头像URL字段
           cardData: {
             description: editForm.cardData.description,
@@ -1228,7 +1291,9 @@ export default {
       displayedEditAvatarUrl,
       triggerAvatarFileInput,
       handleAvatarFileSelect,
-      clearAvatar
+      clearAvatar,
+      // 语言相关
+      getLanguageDisplayName
     }
   }
 }
@@ -2349,6 +2414,66 @@ export default {
       }
     }
   }
+}
+
+/* 语言设置样式 */
+.language-setting-container {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.language-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.language-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.language-select {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+}
+
+.language-display {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.5rem;
+}
+
+.language-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.language-type {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.language-value {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  padding: 0.25rem 0.5rem;
+  background: var(--surface-hover);
+  border-radius: 0.25rem;
 }
 
 /* 删除确认弹窗的动画 */

@@ -35,4 +35,14 @@ public class VoiceMessage {
      * 发送时间戳
      */
     private Long timestamp;
+    
+    /**
+     * 语音语言设置
+     */
+    private String voiceLanguage;
+    
+    /**
+     * 字幕语言设置
+     */
+    private String subtitleLanguage;
 }

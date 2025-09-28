@@ -239,6 +239,45 @@
                 :disabled="loading"
               />
             </div>
+
+            <!-- 语言设置 -->
+            <div class="form-group">
+              <label class="form-label">语言设置</label>
+              <div class="language-setting-container">
+                <div class="language-item">
+                  <label class="language-label">语音语言</label>
+                  <select 
+                    v-model="formData.voiceLanguage" 
+                    class="language-select"
+                    :disabled="loading"
+                  >
+                    <option value="zh">中文</option>
+                    <option value="ja">日文</option>
+                    <option value="en">英文</option>
+                  </select>
+                </div>
+                <div class="language-item">
+                  <label class="language-label">字幕语言</label>
+                  <select 
+                    v-model="formData.subtitleLanguage" 
+                    class="language-select"
+                    :disabled="loading"
+                  >
+                    <option value="zh">中文</option>
+                    <option value="ja">日文</option>
+                    <option value="en">英文</option>
+                    <option value="ko">韩文</option>
+                    <option value="fr">法文</option>
+                    <option value="de">德文</option>
+                    <option value="es">西班牙文</option>
+                    <option value="ru">俄文</option>
+                  </select>
+                </div>
+              </div>
+              <div class="language-description">
+                <span class="description-text">语音语言决定TTS发音，字幕语言决定界面显示文字</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -422,6 +461,8 @@ export default {
       greetingMessage: '',
       isPublic: false,
       ttsVoiceId: '',
+      voiceLanguage: 'zh',
+      subtitleLanguage: 'zh',
       avatarUrl: '', // 新增头像字段
       cardData: {
         description: '',
@@ -833,6 +874,8 @@ export default {
         greetingMessage: '',
         isPublic: false,
         ttsVoiceId: '',
+        voiceLanguage: 'zh',
+        subtitleLanguage: 'zh',
         avatarUrl: '',
         cardData: {
           description: '',
@@ -1011,23 +1054,23 @@ export default {
   background: var(--background-secondary);
   border: none; /* 移除边框 */
   border-radius: 12px; /* 更大的圆角 */
-  padding: $spacing-lg;
-  margin-bottom: $spacing-lg;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
 
   &:last-of-type {
-    margin-bottom: $spacing-xl;
+    margin-bottom: 2rem;
   }
 }
 
 .section-header {
-  margin-bottom: $spacing-lg;
+  margin-bottom: 1.5rem;
 }
 
 .section-title {
   font-size: 1.25rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin: 0 0 $spacing-xs 0;
+  margin: 0 0 0.5rem 0;
 }
 
 .section-description {
@@ -1040,16 +1083,16 @@ export default {
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: $spacing-lg;
+  gap: 1.5rem;
 
   @media (max-width: 768px) {
     grid-template-columns: 1fr;
-    gap: $spacing;
+    gap: 1rem;
   }
 }
 
 .form-group {
-  margin-bottom: $spacing;
+  margin-bottom: 1rem;
 
   &:last-child {
     margin-bottom: 0;
@@ -1057,19 +1100,81 @@ export default {
   
   /* 紧凑模式减少间距 */
   &.compact {
-    margin-bottom: calc($spacing * 0.75);
+    margin-bottom: calc(1rem * 0.75);
   }
 }
 
 /* 角色设定部分使用紧凑布局 */
 .form-section.compact-section .form-group {
-  margin-bottom: calc($spacing * 0.75);
+  margin-bottom: calc(1rem * 0.75);
 }
 
 .voice-select-wrapper {
   display: flex;
   flex-direction: column;
-  gap: $spacing-xs;
+  gap: 0.5rem;
+}
+
+// 语言设置样式
+.language-setting-container {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.language-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 140px;
+}
+
+.language-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.language-select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  background-color: var(--background-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: var(--border-hover);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb), 0.2);
+  }
+
+  &:disabled {
+    background-color: var(--background-disabled);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+  }
+
+  option {
+    background-color: var(--background-primary);
+    color: var(--text-primary);
+  }
+}
+
+.language-description {
+  margin-top: 0.5rem;
+  
+  .description-text {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-style: italic;
+  }
 }
 
 .voice-search {
@@ -1078,9 +1183,9 @@ export default {
   background: var(--background-tertiary);
   border-radius: 8px;
   height: 38px;
-  padding: 0 $spacing-sm;
+  padding: 0 0.75rem;
   border: 1px solid transparent;
-  transition: all $transition-fast ease;
+  transition: all 0.2s ease;
 
   &:focus-within {
     border-color: var(--primary-color);
@@ -1089,7 +1194,7 @@ export default {
 
   svg {
     color: var(--text-tertiary);
-    margin-right: $spacing-sm;
+    margin-right: 0.75rem;
   }
 
   input {
@@ -1121,7 +1226,7 @@ export default {
 
 .form-label {
   display: block;
-  margin-bottom: $spacing-xs;
+  margin-bottom: 0.5rem;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1135,7 +1240,7 @@ export default {
 
 /* 角色设定区域的标签紧凑间距 */
 .form-section.compact-section .form-label {
-  margin-bottom: calc($spacing-xs * 0.8);
+  margin-bottom: calc(0.5rem * 0.8);
   line-height: 1.3;
 }
 
@@ -1143,13 +1248,13 @@ export default {
 .form-textarea,
 .form-select {
   width: 100%;
-  padding: $spacing-sm;
+  padding: 0.75rem;
   border: none; /* 移除边框 */
   border-radius: 8px; /* 圆角 */
   font-size: 14px;
   background: var(--background-tertiary); /* 使用更深的背景色 */
   color: var(--text-primary);
-  transition: all $transition-fast ease;
+  transition: all 0.2s ease;
 
   &:focus {
     outline: none;
@@ -1189,7 +1294,7 @@ export default {
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: $spacing-xs;
+    gap: 0.5rem;
     cursor: pointer;
     
     .checkbox-input {
@@ -1208,18 +1313,18 @@ export default {
 .error-text {
   font-size: 12px;
   color: var(--error-color);
-  margin-top: $spacing-xs;
+  margin-top: 0.5rem;
 
   &.general-error {
     background: rgba(239, 68, 68, 0.1);
-    padding: $spacing-sm;
+    padding: 0.75rem;
     border-radius: 8px;
     border-left: 3px solid var(--error-color);
     font-size: 14px;
     margin: 0;
     display: flex;
     align-items: center;
-    gap: $spacing-xs;
+    gap: 0.5rem;
 
     &::before {
       content: "⚠";
@@ -1231,7 +1336,7 @@ export default {
 .form-help-text {
   font-size: 12px;
   color: var(--text-tertiary);
-  margin-top: $spacing-xs;
+  margin-top: 0.5rem;
   line-height: 1.4;
 }
 
@@ -1240,11 +1345,11 @@ export default {
     background: var(--background-primary);
     border: none; /* 移除边框 */
     border-radius: 8px;
-    padding: $spacing;
-    margin-bottom: $spacing;
+    padding: 1rem;
+    margin-bottom: 1rem;
 
     &:last-of-type {
-      margin-bottom: $spacing;
+      margin-bottom: 1rem;
     }
   }
 
@@ -1252,7 +1357,7 @@ export default {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: $spacing;
+    margin-bottom: 1rem;
   }
 
   .dialog-title {
@@ -1268,8 +1373,8 @@ export default {
     color: var(--text-tertiary);
     cursor: pointer;
     padding: 4px;
-    border-radius: $border-radius-sm;
-    transition: all $transition-fast ease;
+    border-radius: 0.375rem;
+    transition: all 0.2s ease;
 
     &:hover {
       color: var(--error-color);
@@ -1279,7 +1384,7 @@ export default {
 
   .dialog-content {
     .form-group {
-      margin-bottom: $spacing-sm;
+      margin-bottom: 0.75rem;
 
       &:last-child {
         margin-bottom: 0;
@@ -1291,9 +1396,9 @@ export default {
 .add-dialog-btn {
   display: flex;
   align-items: center;
-  gap: $spacing-xs;
+  gap: 0.5rem;
   width: 100%;
-  padding: $spacing-sm;
+  padding: 0.75rem;
   background: var(--background-tertiary);
   border: none; /* 移除虚线边框 */
   border-radius: 8px;
@@ -1301,7 +1406,7 @@ export default {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all $transition-fast ease;
+  transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
     background: var(--background-primary);
@@ -1316,9 +1421,9 @@ export default {
 
 .form-actions {
   display: flex;
-  gap: $spacing;
+  gap: 1rem;
   justify-content: center; /* 居中对齐 */
-  padding: $spacing-lg 0 0;
+  padding: 1.5rem 0 0;
   border-top: none; /* 移除边框 */
 
   @media (max-width: 768px) {
@@ -1330,14 +1435,14 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: $spacing-xs;
-  padding: $spacing-sm $spacing-lg;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
   border: none; /* 移除边框 */
   border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all $transition-fast ease;
+  transition: all 0.2s ease;
   text-decoration: none;
   outline: none;
   min-width: 120px; /* 增加最小宽度 */
@@ -1382,7 +1487,7 @@ export default {
 // 响应式设计
 @media (max-width: 768px) {
   .creator-header {
-    padding: $spacing;
+    padding: 1rem;
   }
 
   .page-title {
@@ -1390,12 +1495,12 @@ export default {
   }
 
   .creator-content {
-    padding: $spacing;
+    padding: 1rem;
   }
 
   .form-section {
-    padding: $spacing;
-    margin-bottom: $spacing;
+    padding: 1rem;
+    margin-bottom: 1rem;
   }
 
   .section-title {
@@ -1403,11 +1508,11 @@ export default {
   }
 
   .form-actions {
-    gap: $spacing-sm;
+    gap: 0.75rem;
   }
 
   .btn {
-    padding: $spacing-sm $spacing;
+    padding: 0.75rem 1rem;
     min-width: auto;
   }
 }
@@ -1415,8 +1520,8 @@ export default {
 // 回顶按钮样式
 .back-to-top-btn {
   position: fixed;
-  bottom: $spacing-lg;
-  right: $spacing-lg;
+  bottom: 1.5rem;
+  right: 1.5rem;
   z-index: 999;
   width: 48px;
   height: 48px;
@@ -1452,7 +1557,7 @@ export default {
   z-index: 9999;
   background: #fff; /* 白底 */
   color: var(--text-primary);
-  padding: $spacing-lg $spacing-xl; /* 整体更大一些 */
+  padding: 1.5rem 2rem; /* 整体更大一些 */
   border-radius: 12px;
   border: 1px solid var(--border-color);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -1498,7 +1603,7 @@ export default {
   display: flex;
   flex-direction: column; /* 垂直排列，使文本靠上 */
   align-items: flex-start; /* 左上对齐 */
-  gap: $spacing-xs;
+  gap: 0.5rem;
   color: var(--text-primary);
 }
 
@@ -1512,7 +1617,7 @@ export default {
 // 头像上传相关样式
 .avatar-section {
   display: flex;
-  gap: $spacing-lg;
+  gap: 1.5rem;
   align-items: flex-start;
 }
 
@@ -1553,7 +1658,7 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: $spacing-xs;
+  gap: 0.5rem;
   z-index: 2;
 }
 
@@ -1576,7 +1681,7 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: $spacing-xs;
+  gap: 0.5rem;
   color: var(--text-tertiary);
 }
 
@@ -1593,14 +1698,14 @@ export default {
   text-align: center;
   font-size: 0.75rem;
   color: var(--text-tertiary);
-  margin-top: $spacing-xs;
+  margin-top: 0.5rem;
 }
 
 .upload-section {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: $spacing;
+  gap: 1rem;
   
   /* 除了上传区域外的所有直接子元素都左对齐到容器边缘 */
   > *:not(.upload-area) {
@@ -1613,7 +1718,7 @@ export default {
 .upload-area {
   border: 2px dashed var(--border-color);
   border-radius: 8px;
-  padding: $spacing-lg;
+  padding: 1.5rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
@@ -1645,7 +1750,7 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: $spacing-sm;
+  gap: 0.75rem;
   pointer-events: auto; /* 允许点击 label 触发 input */
   cursor: pointer;
 }
@@ -1671,7 +1776,7 @@ export default {
 
 .url-input-group {
   .form-label {
-    margin-bottom: $spacing-xs;
+    margin-bottom: 0.5rem;
   }
 
   .form-input.disabled {
@@ -1689,14 +1794,14 @@ export default {
 
 .avatar-actions {
   display: flex;
-  gap: $spacing-sm;
+  gap: 0.75rem;
 }
 
 .btn-clear {
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
-  padding: $spacing-xs $spacing-sm;
+  padding: 0.5rem 0.75rem;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.875rem;

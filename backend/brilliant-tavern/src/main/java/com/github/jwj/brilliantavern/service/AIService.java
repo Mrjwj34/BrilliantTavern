@@ -55,7 +55,7 @@ public class AIService {
                     return Flux.error(new IllegalArgumentException(msg));
                 }
 
-                String systemPrompt = buildSystemPrompt(characterCard);
+                String systemPrompt = buildSystemPrompt(characterCard, voiceMessage);
                 chatMemoryService.limitHistory(conversationId, 40);
                 List<Content> historyMessages = chatMemoryService.getHistory(conversationId);
 
@@ -258,6 +258,37 @@ public class AIService {
     /**
      * 构建系统提示词，使用模板
      */
+    public String buildSystemPrompt(CharacterCard characterCard, VoiceMessage voiceMessage) {
+        try {
+            String template = promptTemplate.getContentAsString(StandardCharsets.UTF_8);
+            
+            // 优先使用语音消息中的语言设置，如果没有则使用角色卡默认设置
+            String voiceLanguage = voiceMessage.getVoiceLanguage() != null ? 
+                voiceMessage.getVoiceLanguage() : 
+                (characterCard.getVoiceLanguage() != null ? characterCard.getVoiceLanguage() : "zh");
+                
+            String subtitleLanguage = voiceMessage.getSubtitleLanguage() != null ? 
+                voiceMessage.getSubtitleLanguage() : 
+                (characterCard.getSubtitleLanguage() != null ? characterCard.getSubtitleLanguage() : "zh");
+            
+            log.debug("构建系统提示词: voiceLanguage={}, subtitleLanguage={}", voiceLanguage, subtitleLanguage);
+            
+            // 手动替换占位符
+            return template
+                    .replace("{character_name}", characterCard.getName())
+                    .replace("{character_description}", getCharacterDescription(characterCard))
+                    .replace("{character_personality}", getCharacterPersonality(characterCard))
+                    .replace("{character_style}", getCharacterStyle(characterCard))
+                    .replace("{voice_language}", voiceLanguage)
+                    .replace("{subtitle_language}", subtitleLanguage);
+            
+        } catch (IOException e) {
+            log.error("读取提示词模板失败", e);
+            throw new RuntimeException("无法构建系统提示词", e);
+        }
+    }
+    
+    // 保留原有方法以兼容性（如果其他地方有调用）
     public String buildSystemPrompt(CharacterCard characterCard) {
         try {
             String template = promptTemplate.getContentAsString(StandardCharsets.UTF_8);
@@ -267,7 +298,9 @@ public class AIService {
                     .replace("{character_name}", characterCard.getName())
                     .replace("{character_description}", getCharacterDescription(characterCard))
                     .replace("{character_personality}", getCharacterPersonality(characterCard))
-                    .replace("{character_style}", getCharacterStyle(characterCard));
+                    .replace("{character_style}", getCharacterStyle(characterCard))
+                    .replace("{voice_language}", characterCard.getVoiceLanguage() != null ? characterCard.getVoiceLanguage() : "zh")
+                    .replace("{subtitle_language}", characterCard.getSubtitleLanguage() != null ? characterCard.getSubtitleLanguage() : "zh");
             
         } catch (IOException e) {
             log.error("读取提示词模板失败", e);

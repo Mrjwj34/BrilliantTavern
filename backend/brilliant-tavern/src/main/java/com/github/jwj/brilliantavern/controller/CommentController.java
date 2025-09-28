@@ -3,6 +3,7 @@ package com.github.jwj.brilliantavern.controller;
 import com.github.jwj.brilliantavern.dto.comment.CommentDTO;
 import com.github.jwj.brilliantavern.dto.comment.CommentQueryRequest;
 import com.github.jwj.brilliantavern.dto.comment.CreateCommentRequest;
+import com.github.jwj.brilliantavern.dto.comment.CommentPageResponse;
 import com.github.jwj.brilliantavern.entity.User;
 import com.github.jwj.brilliantavern.security.UserPrincipal;
 import com.github.jwj.brilliantavern.service.CommentService;
@@ -58,7 +59,7 @@ public class CommentController {
     
     @GetMapping
     @Operation(summary = "获取评论列表", description = "获取指定角色卡的评论列表，支持分页和排序")
-    public ApiResponse<List<CommentDTO>> getComments(
+    public ApiResponse<CommentPageResponse> getComments(
             @Parameter(description = "角色卡ID") @RequestParam UUID cardId,
             @Parameter(description = "排序字段") @RequestParam(defaultValue = "created_at") String sortBy,
             @Parameter(description = "排序方向") @RequestParam(defaultValue = "desc") String sortOrder,
@@ -77,9 +78,9 @@ public class CommentController {
                 .build();
         
         UUID currentUserId = currentUserPrincipal != null ? currentUserPrincipal.getId() : null;
-        List<CommentDTO> comments = commentService.getComments(request, currentUserId);
+        CommentPageResponse response = commentService.getCommentsWithPagination(request, currentUserId);
         
-        return ApiResponse.success(comments);
+        return ApiResponse.success(response);
     }
     
     @GetMapping("/{commentId}/replies")

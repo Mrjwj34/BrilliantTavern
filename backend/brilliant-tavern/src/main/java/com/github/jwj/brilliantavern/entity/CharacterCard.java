@@ -55,8 +55,20 @@ public class CharacterCard {
     @Builder.Default
     private Integer likesCount = 0;
 
+    @Column(name = "comments_count", nullable = false)
+    @Builder.Default
+    private Integer commentsCount = 0;
+
     @Column(name = "tts_voice_id", length = 100)
     private String ttsVoiceId;
+
+    @Column(name = "voice_language", nullable = false, length = 10)
+    @Builder.Default
+    private String voiceLanguage = "zh";
+
+    @Column(name = "subtitle_language", nullable = false, length = 10)
+    @Builder.Default
+    private String subtitleLanguage = "zh";
 
     @Column(name = "avatar_url", length = 500)
     private String avatarUrl;

@@ -33,9 +33,6 @@
           <span class="comment-time" :title="formatFullDate(comment.createdAt)">
             {{ formatRelativeDate(comment.createdAt) }}
           </span>
-          <span v-if="comment.updatedAt !== comment.createdAt" class="edited-badge">
-            已编辑
-          </span>
         </div>
 
         <!-- 评论文本 -->
@@ -368,11 +365,6 @@ export default {
     font-size: 12px;
   }
   
-  .edited-badge {
-    color: var(--text-secondary);
-    font-size: 11px;
-    font-style: italic;
-  }
 }
 
 .comment-text, .reply-text {

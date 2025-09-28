@@ -135,22 +135,29 @@ psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
 
 ## 测试和调试
 
-### 测试文件位置
-- **后端测试**: `backend/brilliant-tavern/src/test/java/`
-- **测试类型**: 音频处理、AI 集成、WebSocket 通信测试
+### 测试架构
+- **后端测试**: 目前项目未包含测试文件，建议在 `backend/brilliant-tavern/src/test/java/` 目录创建
+- **测试框架**: Spring Boot Test (JUnit 5 + Mockito)
+- **推荐测试类型**: 音频处理、AI 集成、WebSocket 通信、Controller 单元测试
 
 ### 调试工具
 - **API 测试**: Swagger UI (`/api/swagger-ui.html`)
 - **日志配置**: 详细的包级别日志 (com.github.jwj.brilliantavern: DEBUG)
 - **SQL 调试**: Hibernate SQL 日志开启
 
-### 运行单个测试
+### 运行测试
 ```bash
+# 运行所有测试
+mvn test
+
 # 运行特定测试类
-mvn test -Dtest=AudioContentTest
+mvn test -Dtest=ClassName
 
 # 运行特定测试方法
-mvn test -Dtest=AudioContentTest#specificTestMethod
+mvn test -Dtest=ClassName#methodName
+
+# 跳过测试
+mvn clean package -DskipTests
 ```
 
 ## 开发注意事项
@@ -163,3 +170,25 @@ mvn test -Dtest=AudioContentTest#specificTestMethod
 6. **文件上传**: 头像等文件存储在 `backend/brilliant-tavern/uploads/` 目录
 7. **WebSocket 调试**: 注意前端 STOMP 连接和后端消息订阅路径匹配
 8. **流式处理**: 语音对话使用流式架构，注意异步处理和错误处理
+
+## 代码检查和构建
+
+### 代码质量检查
+项目未配置 lint 工具，建议添加：
+```bash
+# 格式化代码 (使用 IDE 格式化功能)
+# IntelliJ IDEA: Ctrl+Alt+L (Windows/Linux) 或 Cmd+Option+L (Mac)
+```
+
+### 构建流程
+```bash
+# 完整构建流程
+cd backend/brilliant-tavern
+mvn clean compile          # 清理并编译
+mvn test                   # 运行测试 (如果有)
+mvn package               # 打包应用
+
+cd ../../frontend
+npm install               # 安装依赖
+npm run build            # 构建前端
+```

@@ -36,6 +36,12 @@ public class UpdateCharacterCardRequest {
     @Size(max = 100, message = "TTS音色ID不能超过100个字符")
     private String ttsVoiceId;
 
+    @Size(max = 10, message = "语音语言不能超过10个字符")
+    private String voiceLanguage;
+
+    @Size(max = 10, message = "字幕语言不能超过10个字符")
+    private String subtitleLanguage;
+
     @Valid
     private CharacterCardDataDto cardData;
 

@@ -5,6 +5,7 @@
 -- 创建数据库扩展
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- =====================================
 -- 1. 用户表 (users)
@@ -35,7 +36,10 @@ CREATE TABLE IF NOT EXISTS character_cards (
     avatar_url TEXT,
     is_public BOOLEAN NOT NULL DEFAULT FALSE,
     likes_count INTEGER NOT NULL DEFAULT 0,
+    comments_count INTEGER NOT NULL DEFAULT 0,
     tts_voice_id VARCHAR(100),
+    voice_language VARCHAR(10) NOT NULL DEFAULT 'zh',
+    subtitle_language VARCHAR(10) NOT NULL DEFAULT 'zh',
     card_data JSONB NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,9 +50,12 @@ CREATE TABLE IF NOT EXISTS character_cards (
 CREATE INDEX IF NOT EXISTS idx_character_cards_creator_id ON character_cards(creator_id);
 CREATE INDEX IF NOT EXISTS idx_character_cards_is_public ON character_cards(is_public);
 CREATE INDEX IF NOT EXISTS idx_character_cards_likes_count ON character_cards(likes_count DESC);
+CREATE INDEX IF NOT EXISTS idx_character_cards_comments_count ON character_cards(comments_count DESC);
 CREATE INDEX IF NOT EXISTS idx_character_cards_created_at ON character_cards(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_character_cards_name ON character_cards USING gin(name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_character_cards_card_data ON character_cards USING gin(card_data);
+CREATE INDEX IF NOT EXISTS idx_character_cards_voice_language ON character_cards(voice_language);
+CREATE INDEX IF NOT EXISTS idx_character_cards_subtitle_language ON character_cards(subtitle_language);
 
 -- =====================================
 -- 3. 用户点赞关联表 (user_likes)
@@ -286,5 +293,34 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_pinned_at_trigger
     BEFORE UPDATE ON card_comments
     FOR EACH ROW EXECUTE FUNCTION update_pinned_at();
+
+-- =====================================
+-- 8. 角色全局记忆表 (character_memories)
+-- =====================================
+CREATE TABLE IF NOT EXISTS character_memories (
+    id BIGSERIAL PRIMARY KEY,
+    user_id UUID NOT NULL,
+    character_card_id UUID NOT NULL,
+    memory_content TEXT NOT NULL,
+    embedding vector(768) NOT NULL, -- Gemini Embedding 001 模型生成768维向量
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (character_card_id) REFERENCES character_cards(id) ON DELETE CASCADE
+);
+
+-- 角色记忆表索引
+CREATE INDEX IF NOT EXISTS idx_character_memories_user_id ON character_memories(user_id);
+CREATE INDEX IF NOT EXISTS idx_character_memories_character_card_id ON character_memories(character_card_id);
+CREATE INDEX IF NOT EXISTS idx_character_memories_user_card ON character_memories(user_id, character_card_id);
+CREATE INDEX IF NOT EXISTS idx_character_memories_created_at ON character_memories(created_at DESC);
+
+-- 向量相似度搜索索引 (使用 HNSW 算法，适合高维向量搜索)
+CREATE INDEX IF NOT EXISTS idx_character_memories_embedding ON character_memories 
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+
+-- 为角色记忆表添加 updated_at 触发器
+CREATE TRIGGER update_character_memories_updated_at BEFORE UPDATE ON character_memories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 

@@ -38,14 +38,13 @@ public interface CardCommentRepository extends JpaRepository<CardComment, Long> 
      * 按卡片ID和游标查找评论（无缝分页）
      */
     @Query("SELECT c FROM CardComment c WHERE c.cardId = :cardId AND c.parentCommentId IS NULL " +
+           "AND c.isPinned = false " +
            "AND (:cursor IS NULL OR " +
            "  ((:sortBy = 'likes_count' AND :sortOrder = 'desc' AND (c.likesCount < :cursorLikes OR (c.likesCount = :cursorLikes AND c.id > :cursor))) OR " +
            "   (:sortBy = 'likes_count' AND :sortOrder = 'asc' AND (c.likesCount > :cursorLikes OR (c.likesCount = :cursorLikes AND c.id > :cursor))) OR " +
-           "   (:sortBy = 'created_at' AND :sortOrder = 'desc' AND c.id < :cursor) OR " +
-           "   (:sortBy = 'created_at' AND :sortOrder = 'asc' AND c.id > :cursor))) " +
+           "   (:sortBy = 'created_at' AND :sortOrder = 'desc' AND c.createdAt < :cursorCreatedAt) OR " +
+           "   (:sortBy = 'created_at' AND :sortOrder = 'asc' AND c.createdAt > :cursorCreatedAt))) " +
            "ORDER BY " +
-           "CASE WHEN c.isPinned = true THEN 0 ELSE 1 END, " +
-           "c.pinnedAt DESC, " +
            "CASE WHEN :sortBy = 'likes_count' AND :sortOrder = 'desc' THEN c.likesCount END DESC, " +
            "CASE WHEN :sortBy = 'likes_count' AND :sortOrder = 'asc' THEN c.likesCount END ASC, " +
            "CASE WHEN :sortBy = 'created_at' AND :sortOrder = 'desc' THEN c.createdAt END DESC, " +
@@ -55,6 +54,7 @@ public interface CardCommentRepository extends JpaRepository<CardComment, Long> 
                                                   @Param("sortOrder") String sortOrder,
                                                   @Param("cursor") Long cursor,
                                                   @Param("cursorLikes") Integer cursorLikes,
+                                                  @Param("cursorCreatedAt") java.time.OffsetDateTime cursorCreatedAt,
                                                   Pageable pageable);
     
     /**
@@ -68,6 +68,12 @@ public interface CardCommentRepository extends JpaRepository<CardComment, Long> 
      */
     @Query("SELECT COUNT(c) FROM CardComment c WHERE c.parentCommentId = :parentId")
     Long countRepliesByParentId(@Param("parentId") Long parentId);
+    
+    /**
+     * 批量统计多个评论的回复数量
+     */
+    @Query("SELECT c.parentCommentId, COUNT(c) FROM CardComment c WHERE c.parentCommentId IN :parentIds GROUP BY c.parentCommentId")
+    List<Object[]> countRepliesByParentIds(@Param("parentIds") List<Long> parentIds);
     
     /**
      * 统计角色卡的评论总数（不包括回复）

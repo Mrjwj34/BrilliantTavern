@@ -9,9 +9,16 @@
             v-for="option in sortOptions"
             :key="option.value"
             :class="['sort-btn', { active: sortBy === option.value }]"
+            :disabled="loading"
             @click="handleSortChange(option.value)"
           >
-            {{ option.label }}
+            <span>{{ typeof option.label === 'string' ? option.label : option.label.value }}</span>
+            <svg v-if="option.value === 'created_at' && sortBy === 'created_at'" 
+                 class="sort-icon" 
+                 :class="{ 'rotate-180': sortOrder === 'asc' }" 
+                 width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
           </button>
         </div>
         <button class="close-btn" @click="$emit('close')" title="关闭评论区">
@@ -42,18 +49,20 @@
 
       <!-- 评论项 -->
       <div v-else>
-        <CommentItem
-          v-for="comment in comments"
-          :key="comment.id"
-          :comment="comment"
-          :current-user="currentUser"
-          :card-creator-id="cardCreatorId"
-          @like="handleCommentLike"
-          @reply="handleReply"
-          @pin="handlePin"
-          @delete="handleDelete"
-          @toggle-replies="handleToggleReplies"
-        />
+        <transition-group name="comment-list" tag="div" class="comment-transition-wrapper">
+          <CommentItem
+            v-for="comment in comments"
+            :key="comment.id"
+            :comment="comment"
+            :current-user="currentUser"
+            :card-creator-id="cardCreatorId"
+            @like="handleCommentLike"
+            @reply="handleReply"
+            @pin="handlePin"
+            @delete="handleDelete"
+            @toggle-replies="handleToggleReplies"
+          />
+        </transition-group>
       </div>
 
       <!-- 加载更多 -->
@@ -149,22 +158,28 @@ export default {
     
     // 排序和分页
     const sortBy = ref('created_at')
+    const sortOrder = ref('desc') // desc: 新到旧, asc: 旧到新
     const currentPage = ref(0)
     const pageSize = ref(20)
     const cursor = ref(null)
+    const totalCommentsCount = ref(0)
     
     // 当前用户
     const currentUser = computed(() => storage.get('user'))
     
     // 排序选项
     const sortOptions = [
-      { value: 'created_at', label: '最新' },
-      { value: 'likes_count', label: '点赞最多' }
+      { 
+        value: 'created_at', 
+        label: computed(() => sortBy.value === 'created_at' && sortOrder.value === 'desc' ? '最新' : '最旧'),
+        order: computed(() => sortBy.value === 'created_at' ? sortOrder.value : 'desc')
+      },
+      { value: 'likes_count', label: '点赞最多', order: 'desc' }
     ]
     
     // 计算总评论数
     const totalComments = computed(() => {
-      return comments.value.length
+      return totalCommentsCount.value
     })
 
     // 加载评论
@@ -176,33 +191,58 @@ export default {
         const params = {
           cardId: props.cardId,
           sortBy: sortBy.value,
-          sortOrder: 'desc',
+          sortOrder: sortOrder.value,
           page: append ? currentPage.value : 0,
           size: pageSize.value
         }
         
+        // 只有在追加加载且有游标时才传递cursor参数
         if (append && cursor.value) {
           params.cursor = cursor.value
         }
         
+        console.log('分页请求参数:', params) // 调试日志
+        
         const response = await commentAPI.getComments(params)
-        const newComments = response.data || []
+        const pageData = response.data || {}
+        const newComments = pageData.comments || []
+        
+        console.log('分页响应数据:', { 
+          newCommentsCount: newComments.length, 
+          hasMore: pageData.hasMore,
+          nextCursor: pageData.nextCursor,
+          totalCount: pageData.totalCount
+        }) // 调试日志
         
         if (append) {
+          // 追加新评论到现有列表
           comments.value.push(...newComments)
         } else {
+          // 重置评论列表 - 这是第一页加载或排序切换
           comments.value = newComments
           currentPage.value = 0
+          cursor.value = null
+          console.log('重置评论列表，当前评论数:', newComments.length)
         }
         
-        hasMore.value = newComments.length === pageSize.value
-        if (newComments.length > 0) {
-          cursor.value = newComments[newComments.length - 1].id
+        // 更新分页状态
+        hasMore.value = pageData.hasMore || false
+        
+        // 更新游标：使用后端返回的nextCursor，如果没有则使用最后一条评论的ID
+        if (hasMore.value && newComments.length > 0) {
+          cursor.value = pageData.nextCursor || newComments[newComments.length - 1].id
+        }
+        
+        // 更新页码（用于日志和调试）
+        if (append) {
           currentPage.value += 1
         }
         
+        // 更新总评论数
+        totalCommentsCount.value = pageData.totalCount || 0
+        
         // 通知父组件更新评论数
-        emit('comment-count-update', comments.value.length)
+        emit('comment-count-update', totalCommentsCount.value)
         
       } catch (error) {
         console.error('加载评论失败:', error)
@@ -228,8 +268,11 @@ export default {
         comments.value.unshift(response.data)
         newComment.value = ''
         
+        // 更新总评论数
+        totalCommentsCount.value += 1
+        
         // 通知父组件更新评论数
-        emit('comment-count-update', comments.value.length)
+        emit('comment-count-update', totalCommentsCount.value)
         
       } catch (error) {
         console.error('发表评论失败:', error)
@@ -239,12 +282,44 @@ export default {
     }
 
     // 处理排序变化
-    const handleSortChange = (newSortBy) => {
-      if (sortBy.value === newSortBy) return
+    const handleSortChange = async (newSortBy) => {
+      console.log('点击排序按钮:', newSortBy, '当前排序:', sortBy.value, '当前顺序:', sortOrder.value)
       
-      sortBy.value = newSortBy
+      // 防止在加载过程中重复点击
+      if (loading.value) return
+      
+      // 如果点击的是当前时间排序，则切换排序顺序
+      if (sortBy.value === newSortBy && newSortBy === 'created_at') {
+        sortOrder.value = sortOrder.value === 'desc' ? 'asc' : 'desc'
+        console.log('切换时间排序顺序:', sortOrder.value)
+      } else if (sortBy.value !== newSortBy) {
+        // 切换到不同的排序字段
+        sortBy.value = newSortBy
+        sortOrder.value = newSortBy === 'created_at' ? 'desc' : 'desc' // 默认排序
+        console.log('切换排序方式:', sortBy.value, '排序顺序:', sortOrder.value)
+      } else {
+        // 点击相同的非时间排序，不做处理
+        return
+      }
+      
+      // 重置所有分页相关状态
       cursor.value = null
-      loadComments(false)
+      currentPage.value = 0
+      hasMore.value = true
+      
+      // 滚动到顶部
+      if (commentsContainer.value) {
+        commentsContainer.value.scrollTop = 0
+        console.log('已重置滚动位置到顶部')
+      }
+      
+      // 重新加载第一页
+      await loadComments(false)
+      
+      // 重新设置无限滚动观察器
+      await resetInfiniteScroll()
+      
+      console.log('排序切换完成，无限滚动已重新设置')
     }
 
     // 处理评论点赞
@@ -295,9 +370,9 @@ export default {
       
       replyingTo.value = null
       
-      // 通知父组件更新评论数（包括回复）
-      const totalCount = comments.value.length + comments.value.reduce((sum, c) => sum + (c.repliesCount || 0), 0)
-      emit('comment-count-update', totalCount)
+      // 注意：回复��影响主评论总数，所以不需要更新totalCommentsCount
+      // 但需要通知父组件当前的总数（主评论数）
+      emit('comment-count-update', totalCommentsCount.value)
     }
 
     // 处理置顶
@@ -324,7 +399,8 @@ export default {
         if (index > -1) {
           // 删除主评论
           comments.value.splice(index, 1)
-          emit('comment-count-update', comments.value.length)
+          totalCommentsCount.value = Math.max(0, totalCommentsCount.value - 1)
+          emit('comment-count-update', totalCommentsCount.value)
         } else {
           // 在回复中查找并删除
           for (const mainComment of comments.value) {
@@ -334,9 +410,9 @@ export default {
                 mainComment.replies.splice(replyIndex, 1)
                 mainComment.repliesCount = Math.max(0, (mainComment.repliesCount || 0) - 1)
                 
-                // 更新总评论数
-                const totalCount = comments.value.length + comments.value.reduce((sum, c) => sum + (c.repliesCount || 0), 0)
-                emit('comment-count-update', totalCount)
+                // 注意：回复不影响主评论总数，所以不需要更新totalCommentsCount
+                // 但需要通知父组件更新显示的回复数量
+                emit('comment-count-update', totalCommentsCount.value)
                 break
               }
             }
@@ -370,23 +446,48 @@ export default {
       comment.showReplies = true
     }
 
+    // 无限滚动观察器引用
+    let currentObserver = null
+    
     // 无缝滚动加载
     const setupInfiniteScroll = () => {
-      if (!loadTrigger.value) return
+      // 先清理现有的观察器
+      if (currentObserver) {
+        currentObserver.disconnect()
+        currentObserver = null
+      }
       
-      const observer = new IntersectionObserver(
+      if (!loadTrigger.value) {
+        console.log('loadTrigger元素未找到，延迟设置观察器')
+        return null
+      }
+      
+      currentObserver = new IntersectionObserver(
         (entries) => {
           const entry = entries[0]
           if (entry.isIntersecting && hasMore.value && !loading.value) {
+            console.log('触发无限滚动加载', { hasMore: hasMore.value, loading: loading.value }) // 调试日志
             loadComments(true)
           }
         },
         { threshold: 0.1 }
       )
       
-      observer.observe(loadTrigger.value)
+      currentObserver.observe(loadTrigger.value)
+      console.log('无限滚动观察器已设置')
       
-      return () => observer.disconnect()
+      return () => {
+        if (currentObserver) {
+          currentObserver.disconnect()
+          currentObserver = null
+        }
+      }
+    }
+    
+    // 重新设置无限滚动观察器
+    const resetInfiniteScroll = async () => {
+      await nextTick() // 等待DOM更新
+      setupInfiniteScroll()
     }
 
     // 组件挂载
@@ -394,8 +495,16 @@ export default {
       await loadComments()
       await nextTick()
       
-      const cleanup = setupInfiniteScroll()
-      onUnmounted(cleanup)
+      setupInfiniteScroll()
+    })
+    
+    // 组件卸载时清理观察器
+    onUnmounted(() => {
+      if (currentObserver) {
+        currentObserver.disconnect()
+        currentObserver = null
+        console.log('组件卸载，已清理无限滚动观察器')
+      }
     })
 
     return {
@@ -474,8 +583,11 @@ export default {
     cursor: pointer;
     transition: all $transition-fast ease;
     font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
 
-    &:hover {
+    &:hover:not(:disabled) {
       border-color: var(--primary-color);
       color: var(--primary-color);
     }
@@ -484,6 +596,20 @@ export default {
       background: var(--primary-color);
       border-color: var(--primary-color);
       color: white;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .sort-icon {
+      transition: transform 0.3s ease;
+      flex-shrink: 0;
+      
+      &.rotate-180 {
+        transform: rotate(180deg);
+      }
     }
   }
 
@@ -666,5 +792,29 @@ export default {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+// 评论列表过渡动画
+.comment-transition-wrapper {
+  position: relative;
+}
+
+.comment-list-enter-active,
+.comment-list-leave-active {
+  transition: all 0.4s ease;
+}
+
+.comment-list-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+.comment-list-leave-to {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+
+.comment-list-move {
+  transition: transform 0.4s ease;
 }
 </style>
