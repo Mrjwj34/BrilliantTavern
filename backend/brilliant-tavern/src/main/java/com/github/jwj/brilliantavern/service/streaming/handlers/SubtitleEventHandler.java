@@ -31,7 +31,7 @@ public class SubtitleEventHandler implements EventHandler {
         return switch (tagEvent.getEventType()) {
             case TAG_OPENED -> handleSubtitleOpened(tagEvent, contextKey);
             case CONTENT_CHUNK -> handleSubtitleContent(tagEvent, contextKey, sessionState);
-            case TAG_CLOSED -> handleSubtitleClosed(tagEvent, contextKey);
+            case TAG_CLOSED -> handleSubtitleClosed(tagEvent, contextKey, sessionState);
         };
     }
 
@@ -61,9 +61,8 @@ public class SubtitleEventHandler implements EventHandler {
             return Flux.empty();
         }
         
+        // 只在上下文中累积内容，不重复累积到SessionState中
         context.contentBuffer.append(content);
-        // 同时收集到会话状态中，用于数据库存储
-        sessionState.getSubtitleContent().append(content);
         
         int segmentOrder = context.segmentOrder.getAndIncrement();
         
@@ -73,7 +72,7 @@ public class SubtitleEventHandler implements EventHandler {
         return Flux.just(buildSubtitleSegmentEvent(tagEvent, content, segmentOrder, false));
     }
 
-    private Flux<VoiceStreamEvent> handleSubtitleClosed(TagEvent tagEvent, String contextKey) {
+    private Flux<VoiceStreamEvent> handleSubtitleClosed(TagEvent tagEvent, String contextKey, StreamingVoiceOrchestrator.SessionState sessionState) {
         SubtitleContext context = subtitleContexts.remove(contextKey);
         if (context == null) {
             log.warn("字幕标签结束但上下文不存在: sessionId={}, messageId={}", 
@@ -81,10 +80,19 @@ public class SubtitleEventHandler implements EventHandler {
             return Flux.empty();
         }
         
-        log.debug("字幕标签结束: sessionId={}, messageId={}, 总内容长度={}", 
-                tagEvent.getSessionId(), tagEvent.getMessageId(), context.contentBuffer.length());
-        
         String fullContent = context.contentBuffer.toString();
+        
+        log.debug("字幕标签结束: sessionId={}, messageId={}, 总内容长度={}", 
+                tagEvent.getSessionId(), tagEvent.getMessageId(), fullContent.length());
+        
+        // 在字幕标签结束时，将完整内容一次性设置到SessionState中（而不是累积）
+        if (StringUtils.hasText(fullContent)) {
+            sessionState.getSubtitleContent().setLength(0); // 清空之前的内容
+            sessionState.getSubtitleContent().append(fullContent); // 设置完整内容
+            log.debug("字幕完整内容设置到SessionState: sessionId={}, messageId={}, content={}", 
+                    sessionState.getSessionId(), sessionState.getMessageId(), fullContent);
+        }
+        
         return Flux.just(buildSubtitleEndEvent(tagEvent, fullContent));
     }
 
