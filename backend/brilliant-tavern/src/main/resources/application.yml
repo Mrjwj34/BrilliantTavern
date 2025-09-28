@@ -127,6 +127,16 @@ app:
       timeout: ${TTS_WARMUP_TIMEOUT:15s}  # 预热超时时间
       delay: ${TTS_WARMUP_DELAY:3s}  # 应用启动后延迟预热时间
   
+  # GenAI服务配置
+  genai:
+    # 预热配置
+    warmup:
+      enabled: ${GENAI_WARMUP_ENABLED:true}     # 是否启用预热
+      text: ${GENAI_WARMUP_TEXT:Hi}             # 预热文本（极小化）
+      timeout: ${GENAI_WARMUP_TIMEOUT:30s}      # 预热超时时间
+      delay: ${GENAI_WARMUP_DELAY:10s}          # 应用启动后延迟预热时间
+      maintain-interval: ${GENAI_WARMUP_MAINTAIN_INTERVAL:3600000}  # 维持预热间隔（1小时）
+
   # 文件上传配置
   upload:
     max-file-size: 10MB

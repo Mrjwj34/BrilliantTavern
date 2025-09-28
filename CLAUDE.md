@@ -63,6 +63,11 @@ psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
 - `TTS_WARMUP_VOICE_IDS`: 预热的音色ID列表 (默认 "1,2,3")
 - `TTS_WARMUP_TIMEOUT`: 预热超时时间 (默认 15s)
 - `TTS_WARMUP_DELAY`: 启动后延迟预热时间 (默认 3s)
+- `GENAI_WARMUP_ENABLED`: 是否启用GenAI预热 (默认 true)
+- `GENAI_WARMUP_TEXT`: GenAI预热文本 (默认 "Hi")
+- `GENAI_WARMUP_TIMEOUT`: GenAI预热超时时间 (默认 30s)
+- `GENAI_WARMUP_DELAY`: GenAI启动后延迟预热时间 (默认 10s)
+- `GENAI_WARMUP_MAINTAIN_INTERVAL`: GenAI维持预热间隔 (默认 1小时)
 
 ## 核心功能模块
 
@@ -90,7 +95,13 @@ psql -U postgres -d brilliant_tavern -f scripts/init_database.sql
 - **连接池优化**: 配置HTTP连接池，提升并发性能和连接复用
 - **健康检查**: 提供TTS服务状态监控和故障诊断
 
-### 5. AI 服务 (`AIService`)
+### 5. GenAI 预热管理 (`GenAIWarmupService`, `GenAIHealthController`)
+- **智能预热机制**: 应用启动后自动预热Vertex AI模型，解决首次调用延迟
+- **成本优化**: 使用极小请求（1输入+10输出token）进行预热，成本可忽略
+- **维持策略**: 每小时自动维持预热，确保服务持续可用
+- **健康监控**: 提供API查看预热状态和手动触发预热功能
+
+### 6. AI 服务 (`AIService`)
 - Google Vertex AI 集成 (Gemini 2.5 Flash)
 - 对话生成和流式处理
 - 思考模式支持 (可配置 think-budget)
@@ -180,6 +191,8 @@ mvn clean package -DskipTests
 8. **流式处理**: 语音对话使用流式架构，注意异步处理和错误处理
 9. **TTS 预热**: 应用启动后会自动预热TTS服务，可通过环境变量控制预热行为
 10. **TTS 监控**: 使用 `/api/tts/health` 检查服务状态，`/api/tts/warmup` 手动触发预热
+11. **GenAI 预热**: 应用启动后自动预热Vertex AI模型，解决首次调用冷启动问题
+12. **GenAI 监控**: 使用 `/api/genai/health` 检查预热状态，`/api/genai/warmup` 手动触发预热
 
 ## 代码检查和构建
 
