@@ -550,12 +550,13 @@ public class AIService {
      */
     private void addVirtualConversationRound(String conversationId, String queryText, String result) {
         try {
-            // 创建更自然的对话格式，作为上下文参考
-            // 模拟AI内部记忆检索过程
-            Content internalQuery = Content.fromParts(Part.fromText("(内部记忆检索: " + queryText + ")"));
+            // 创建明确的记忆检索完成标记，避免AI误认为需要继续检索
+            Content internalQuery = Content.fromParts(Part.fromText("(记忆检索已完成，查询: " + queryText + ")"));
             
-            // 检索结果作为内部知识
-            String memoryContext = result.isEmpty() ? "(没有找到相关记忆)" : "(记忆内容: " + result + ")";
+            // 检索结果作为已获得的知识，明确标记为已完成状态
+            String memoryContext = result.isEmpty() ? 
+                "(记忆检索已完成，没有找到相关记忆，请基于现有信息回复)" : 
+                "(记忆检索已完成，获得记忆: " + result + "，请基于这些记忆回复)";
             Content memoryResponse = Content.fromParts(Part.fromText(memoryContext));
             
             // 添加到对话历史但不持久化到数据库

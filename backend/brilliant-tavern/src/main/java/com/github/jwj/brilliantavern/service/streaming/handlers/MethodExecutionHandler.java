@@ -28,6 +28,9 @@ public class MethodExecutionHandler implements EventHandler {
     private static final Pattern METHOD_PATTERN = Pattern.compile("(\\w+)\\(([^)]*)\\)");
     private final Map<String, MethodContext> methodContexts = new java.util.concurrent.ConcurrentHashMap<>();
     
+    // 添加去重机制：跟踪已执行的方法调用
+    private final Map<String, java.util.Set<String>> executedMethods = new java.util.concurrent.ConcurrentHashMap<>();
+    
     private final CharacterMemoryService characterMemoryService;
     private final ImageGenerationService imageGenerationService;
 
@@ -96,6 +99,9 @@ public class MethodExecutionHandler implements EventHandler {
         log.info("解析方法调用: sessionId={}, messageId={}, methodCalls={}", 
                 tagEvent.getSessionId(), tagEvent.getMessageId(), methodCalls);
         
+        // 生成去重key
+        String sessionMessageKey = tagEvent.getSessionId() + "_" + tagEvent.getMessageId();
+        
         // 按分号分割多个方法调用
         String[] methodCallArray = methodCalls.split(";");
         
@@ -103,13 +109,40 @@ public class MethodExecutionHandler implements EventHandler {
             .map(String::trim)
             .filter(StringUtils::hasText)
             .flatMap(methodCall -> {
+                // 生成方法调用的唯一标识
+                String methodKey = methodCall.trim();
+                
+                // 检查是否已经执行过这个方法
+                java.util.Set<String> sessionExecutedMethods = executedMethods.computeIfAbsent(sessionMessageKey, k -> java.util.concurrent.ConcurrentHashMap.newKeySet());
+                
+                if (sessionExecutedMethods.contains(methodKey)) {
+                    log.warn("方法调用重复，跳过执行: sessionId={}, messageId={}, methodCall={}", 
+                            tagEvent.getSessionId(), tagEvent.getMessageId(), methodCall);
+                    return Flux.empty(); // 跳过重复的方法调用
+                }
+                
+                // 标记为已执行
+                sessionExecutedMethods.add(methodKey);
+                
                 MethodCall parsedMethod = parseMethodCall(methodCall);
                 if (parsedMethod == null) {
                     log.warn("方法调用格式不正确: sessionId={}, messageId={}, methodCall={}", 
                             tagEvent.getSessionId(), tagEvent.getMessageId(), methodCall);
                     return Flux.just(buildMethodErrorEvent(tagEvent, "方法调用格式不正确: " + methodCall));
                 }
-                return executeMethod(tagEvent, parsedMethod, context.sessionState);
+                
+                return executeMethod(tagEvent, parsedMethod, context.sessionState)
+                    .doFinally(signalType -> {
+                        // 方法执行完成后，可以选择清理去重记录（用于允许后续重新执行）
+                        // 这里暂时保留，避免同一消息内的重复执行
+                        log.debug("方法执行完成: methodCall={}, signalType={}", methodCall, signalType);
+                    });
+            })
+            .doFinally(signalType -> {
+                // 当整个方法调用处理完成后，清理去重记录以释放内存
+                // 注意：这里可能需要根据实际需求调整清理策略
+                executedMethods.remove(sessionMessageKey);
+                log.debug("清理方法执行去重记录: sessionMessageKey={}", sessionMessageKey);
             });
     }
 

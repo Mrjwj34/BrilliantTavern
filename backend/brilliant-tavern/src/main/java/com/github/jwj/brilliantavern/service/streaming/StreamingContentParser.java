@@ -353,22 +353,48 @@ public class StreamingContentParser {
         
         String trimmed = content.trim();
         
-        // 检查是否以[MEM]开头且包含结束标签
-        if (trimmed.startsWith("[MEM]") && trimmed.contains("[/MEM]")) {
+        // 检查是否包含MEM标签
+        if (trimmed.contains("[MEM]") && trimmed.contains("[/MEM]")) {
             // 确保不包含其他标准标签 (TSS, SUB, ASR, DO)
             boolean hasOtherTags = trimmed.contains("[TSS:") || 
                                  trimmed.contains("[SUB:") || 
                                  trimmed.contains("[ASR]") ||
                                  trimmed.contains("[DO]");
             
+            if (hasOtherTags) {
+                return false;
+            }
+            
+            // 检测MEM标签格式错误的情况
+            if (hasMemTagFormatError(trimmed)) {
+                log.warn("检测到MEM标签格式错误，将作为记忆查询处理: {}", trimmed);
+                return true; // 仍然作为MEM标签请求处理，但会跳过标签格式验证
+            }
+            
             // 检测是否有重复的[MEM]标签（表示格式错误）
             int memCount = (trimmed.length() - trimmed.replace("[MEM]", "").length()) / 5; // "[MEM]"长度为5
             boolean hasRepeatedMemTags = memCount > 1;
             
-            return !hasOtherTags && !hasRepeatedMemTags;
+            return !hasRepeatedMemTags;
         }
         
         return false;
+    }
+    
+    /**
+     * 检测MEM标签是否有格式错误
+     */
+    private boolean hasMemTagFormatError(String content) {
+        // 检测如 "[MEM[MEM]..." 这种嵌套错误格式
+        if (content.contains("[MEM[MEM]")) {
+            return true;
+        }
+        
+        // 检测不匹配的开始和结束标签数量
+        int openCount = content.length() - content.replace("[MEM]", "").length();
+        int closeCount = content.length() - content.replace("[/MEM]", "").length();
+        
+        return openCount != closeCount;
     }
     
     /**
