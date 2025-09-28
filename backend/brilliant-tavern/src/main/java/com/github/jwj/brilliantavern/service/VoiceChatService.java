@@ -428,6 +428,23 @@ public class VoiceChatService {
     public List<ChatHistory> getChatHistoryByHistoryId(UUID historyId) {
         return chatHistoryRepository.findByHistoryIdOrderByTimestampAsc(historyId);
     }
+    
+    /**
+     * 更新历史记录的附件信息
+     */
+    @Transactional
+    public void updateHistoryAttachments(UUID historyId, String attachmentsJson) {
+        log.info("开始更新历史记录附件信息: historyId={}, attachments={}", historyId, attachmentsJson);
+        
+        int updatedRows = chatHistoryRepository.updateHistoryAttachments(historyId, attachmentsJson);
+        
+        log.info("历史记录附件信息更新完成: historyId={}, updatedRows={}, attachments={}", 
+                historyId, updatedRows, attachmentsJson);
+        
+        if (updatedRows == 0) {
+            log.warn("没有找到需要更新的历史记录: historyId={}", historyId);
+        }
+    }
 
     /**
      * 删除历史记录

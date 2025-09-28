@@ -94,7 +94,7 @@ public class ImageGenerationService {
             GenerateContentResponse response = genAIClient.models.generateContent(
                     "gemini-2.5-flash-image-preview", 
                     content,
-                    GenerateContentConfig.builder().responseModalities("TEXT", "IMAGE").candidateCount(1).build()
+                    GenerateContentConfig.builder().responseModalities("TEXT", "IMAGE").build()
             );
             
             // 处理生成结果 - 查找图像数据
@@ -185,29 +185,40 @@ public class ImageGenerationService {
             // 自画像模式 - 根据是否有参考图像调整提示词
             StringBuilder promptBuilder = new StringBuilder();
             
+            // 强制生成图片的指令前缀
+            promptBuilder.append("IMPORTANT: Generate a visual image, not text. ");
+            
             if (StringUtils.hasText(characterCard.getAvatarUrl())) {
                 // 有参考图像 - 基于参考图像生成自画像
-                promptBuilder.append("Based on the reference image provided, create a portrait of this character with the following expression/mood: ")
+                promptBuilder.append("Based on the reference image provided, create a detailed portrait of this character showing: ")
                            .append(description).append(". ");
                 promptBuilder.append("Keep the character's visual identity consistent with the reference image, ");
                 promptBuilder.append("but show them with the requested expression/pose. ");
-                promptBuilder.append("High quality anime/manga art style with detailed facial features and expressive animation.");
+                promptBuilder.append("Style: High quality anime/manga art with detailed facial features, expressive eyes, and dynamic composition. ");
+                promptBuilder.append("Make it visually striking and emotionally engaging.");
             } else {
                 // 无参考图像 - 基于简化的角色信息生成自画像
-                promptBuilder.append("Create a portrait with the following expression/mood: ").append(description).append(". ");
+                promptBuilder.append("Create a detailed character portrait showing: ").append(description).append(". ");
                 
                 // 只添加角色名称（如果有）
                 if (StringUtils.hasText(characterCard.getName())) {
-                    promptBuilder.append("Character name: ").append(characterCard.getName()).append(". ");
+                    promptBuilder.append("Character: ").append(characterCard.getName()).append(". ");
                 }
                 
-                promptBuilder.append("High quality anime/manga art style with detailed facial features and expressive animation.");
+                promptBuilder.append("Style: High quality anime/manga art with detailed facial features, expressive eyes, and dynamic composition. ");
+                promptBuilder.append("Focus on emotions and personality. Make it visually appealing and full of character.");
             }
             
             return promptBuilder.toString();
         } else {
             // 普通图像生成模式 - 完全由用户描述决定，AI自由发挥
-            return String.format("Create an image based on this description: %s. Be creative and add appropriate visual details to make it engaging and beautiful. High quality, detailed artwork.", description);
+            StringBuilder promptBuilder = new StringBuilder();
+            promptBuilder.append("IMPORTANT: Generate a visual image, not text. ");
+            promptBuilder.append("Create a detailed image showing: ").append(description).append(". ");
+            promptBuilder.append("Be creative and add rich visual details to make it engaging and beautiful. ");
+            promptBuilder.append("Style: High quality, detailed artwork with vibrant colors and clear composition. ");
+            promptBuilder.append("Focus on visual storytelling and aesthetic appeal.");
+            return promptBuilder.toString();
         }
     }
 

@@ -262,6 +262,37 @@ export default {
       const time = new Date(value).getTime()
       return Number.isNaN(time) ? Date.now() : time
     }
+    
+    // 映射历史消息，包括处理附件信息
+    const mapHistoryMessage = (item, fallbackId) => {
+      const baseMessage = {
+        id: `${item.id || fallbackId}`,
+        role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
+        text: item.content,
+        timestamp: parseTimestamp(item.timestamp),
+        audioSegments: []
+      }
+      
+      // 处理附件信息（主要是图片）
+      if (item.attachments) {
+        try {
+          const attachments = JSON.parse(item.attachments)
+          if (attachments.images && Array.isArray(attachments.images)) {
+            baseMessage.images = attachments.images.map(img => ({
+              id: `history-image-${item.id}-${img.uri}`,
+              status: 'completed',
+              imageUri: img.uri,
+              description: img.description || '',
+              isSelf: img.isSelf || false
+            }))
+          }
+        } catch (e) {
+          console.warn('解析历史记录附件信息失败:', e, item.attachments)
+        }
+      }
+      
+      return baseMessage
+    }
 
     const filteredCharacters = computed(() => {
       if (!searchKeyword.value) {
@@ -312,13 +343,7 @@ export default {
         if (response?.code === 200) {
           const history = Array.isArray(response.data) ? response.data : []
           const mapped = history
-            .map(item => ({
-              id: `${item.id || `${characterId}-${item.timestamp}`}`,
-              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
-              text: item.content,
-              timestamp: parseTimestamp(item.timestamp),
-              audioSegments: []
-            }))
+            .map(item => mapHistoryMessage(item, `${characterId}-${item.timestamp}`))
             .sort((a, b) => a.timestamp - b.timestamp)
           messages.value = mapped
         } else {
@@ -348,13 +373,7 @@ export default {
         if (response?.code === 200) {
           const history = Array.isArray(response.data) ? response.data : []
           const mapped = history
-            .map(item => ({
-              id: `${item.id || `${sessionId}-${item.timestamp}`}`,
-              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
-              text: item.content,
-              timestamp: parseTimestamp(item.timestamp),
-              audioSegments: []
-            }))
+            .map(item => mapHistoryMessage(item, `${sessionId}-${item.timestamp}`))
             .sort((a, b) => a.timestamp - b.timestamp)
           messages.value = mapped
         } else {
@@ -384,13 +403,7 @@ export default {
         if (response?.code === 200) {
           const history = Array.isArray(response.data) ? response.data : []
           const mapped = history
-            .map(item => ({
-              id: `${item.id || `complete-${item.timestamp}`}`,
-              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
-              text: item.content,
-              timestamp: parseTimestamp(item.timestamp),
-              audioSegments: []
-            }))
+            .map(item => mapHistoryMessage(item, `complete-${item.timestamp}`))
             .sort((a, b) => a.timestamp - b.timestamp)
           messages.value = mapped
         } else {
@@ -545,13 +558,7 @@ export default {
         if (response?.code === 200) {
           const history = Array.isArray(response.data) ? response.data : []
           const mapped = history
-            .map(item => ({
-              id: `${item.id || `history-${item.timestamp}`}`,
-              role: item.role === 'ASSISTANT' ? 'assistant' : 'user',
-              text: item.content,
-              timestamp: parseTimestamp(item.timestamp),
-              audioSegments: []
-            }))
+            .map(item => mapHistoryMessage(item, `history-${item.timestamp}`))
             .sort((a, b) => a.timestamp - b.timestamp)
           messages.value = mapped
         } else {
@@ -1371,6 +1378,9 @@ export default {
       } else if (payload.action === 'image_generation_completed') {
         // 图像生成完成
         handleImageGenerationCompleted(message)
+      } else if (payload.action === 'image_generation_failed') {
+        // 图像生成失败
+        handleImageGenerationFailed(message)
       }
     }
 
@@ -1464,6 +1474,29 @@ export default {
       updateImageInMessage(messageId, result)
     }
     
+    // 处理图像生成失败事件
+    const handleImageGenerationFailed = (message) => {
+      const { messageId, payload } = message
+      console.debug('处理图像生成失败:', { messageId, payload })
+      
+      const characterName = selectedCharacter.value?.name || '角色'
+      const errorMessage = payload.error || '图像生成失败'
+      
+      // 显示错误提示
+      const failedMessages = [
+        `😔 ${characterName}的创作遇到了困难...`,
+        `🎨 ${characterName}暂时无法完成这幅作品`,
+        `💭 ${characterName}说：抱歉，我现在画不出来这个...`,
+        `🖼️ ${characterName}的灵感暂时卡住了`
+      ]
+      
+      const randomMessage = failedMessages[Math.floor(Math.random() * failedMessages.length)]
+      notification.error(`${randomMessage}\n详细错误：${errorMessage}`)
+      
+      // 移除对话中的图像占位符
+      removeImagePlaceholder(messageId)
+    }
+    
     // 添加图像占位符到对话
     const addImagePlaceholder = (messageId, isSelf, description) => {
       // 确保有对应的助手消息
@@ -1503,6 +1536,18 @@ export default {
           // 更新消息
           updateMessages()
         }
+      }
+    }
+    
+    // 移除消息中的图像占位符
+    const removeImagePlaceholder = (messageId) => {
+      const assistantMessage = assistantMessages.get(messageId)
+      if (assistantMessage && assistantMessage.images) {
+        // 移除所有正在生成的图像占位符
+        assistantMessage.images = assistantMessage.images.filter(img => img.status !== 'generating')
+        
+        // 更新消息
+        updateMessages()
       }
     }
 

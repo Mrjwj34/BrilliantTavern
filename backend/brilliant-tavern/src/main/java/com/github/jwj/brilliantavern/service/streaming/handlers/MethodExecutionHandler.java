@@ -265,7 +265,7 @@ public class MethodExecutionHandler implements EventHandler {
                     tagEvent.getSessionId(),
                     tagEvent.getMessageId()
                 ).map(result -> buildImageGenerationResultEvent(tagEvent, result))
-                .onErrorReturn(buildMethodErrorEvent(tagEvent, "图像生成失败"))
+                .onErrorReturn(buildImageGenerationErrorEvent(tagEvent, "图像生成失败"))
             );
             
         } catch (Exception e) {
@@ -305,6 +305,23 @@ public class MethodExecutionHandler implements EventHandler {
                 "isSelf", result.isSelf(),
                 "status", "success"
         ));
+        
+        return VoiceStreamEvent.builder()
+                .type(VoiceStreamEvent.Type.METHOD_EXECUTION)
+                .sessionId(tagEvent.getSessionId())
+                .messageId(tagEvent.getMessageId())
+                .timestamp(Instant.now().toEpochMilli())
+                .payload(payload)
+                .build();
+    }
+    
+    /**
+     * 构建图像生成错误事件
+     */
+    private VoiceStreamEvent buildImageGenerationErrorEvent(TagEvent tagEvent, String errorMessage) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", "image_generation_failed");
+        payload.put("error", errorMessage);
         
         return VoiceStreamEvent.builder()
                 .type(VoiceStreamEvent.Type.METHOD_EXECUTION)

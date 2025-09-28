@@ -175,7 +175,12 @@ public class StreamingVoiceOrchestrator {
                 .filter(event -> event.getType() == VoiceStreamEvent.Type.METHOD_EXECUTION)
                 .doOnNext(event -> {
                     Map<String, Object> payload = event.getPayload();
-                    if (payload != null && "image_generation_completed".equals(payload.get("action"))) {
+                    String action = payload != null ? (String) payload.get("action") : null;
+                    log.debug("处理METHOD_EXECUTION事件: sessionId={}, action={}", sessionState.sessionId, action);
+                    
+                    if (payload != null && "image_generation_completed".equals(action)) {
+                        log.info("检测到图像生成完成事件: sessionId={}, messageId={}", 
+                                sessionState.sessionId, sessionState.messageId);
                         collectImageAttachment(event, sessionState);
                     }
                 });
@@ -213,13 +218,22 @@ public class StreamingVoiceOrchestrator {
      */
     private void collectImageAttachment(VoiceStreamEvent event, SessionState sessionState) {
         try {
+            log.info("开始收集图像附件信息: sessionId={}, messageId={}", 
+                    sessionState.sessionId, sessionState.messageId);
+            
             Map<String, Object> payload = event.getPayload();
             Map<String, Object> result = (Map<String, Object>) payload.get("result");
+            
+            log.debug("图像附件payload: {}", payload);
+            log.debug("图像附件result: {}", result);
             
             if (result != null) {
                 String imageUri = (String) result.get("imageUri");
                 String description = (String) result.get("description");
                 Boolean isSelf = (Boolean) result.get("isSelf");
+                
+                log.info("解析图像附件信息: imageUri={}, description={}, isSelf={}", 
+                        imageUri, description, isSelf);
                 
                 if (imageUri != null) {
                     ImageAttachment attachment = new ImageAttachment(
@@ -229,12 +243,65 @@ public class StreamingVoiceOrchestrator {
                     );
                     
                     sessionState.getGeneratedImages().add(attachment);
-                    log.debug("收集图像附件: sessionId={}, messageId={}, imageUri={}", 
-                            sessionState.sessionId, sessionState.messageId, imageUri);
+                    log.info("图像附件已添加到SessionState: sessionId={}, messageId={}, imageUri={}, 总数={}", 
+                            sessionState.sessionId, sessionState.messageId, imageUri, 
+                            sessionState.getGeneratedImages().size());
+                    
+                    // 如果对话已经保存，则更新附件信息
+                    updateHistoryAttachments(sessionState);
+                } else {
+                    log.warn("图像URI为空，跳过附件收集: sessionId={}, messageId={}", 
+                            sessionState.sessionId, sessionState.messageId);
                 }
+            } else {
+                log.warn("图像附件result为空: sessionId={}, messageId={}", 
+                        sessionState.sessionId, sessionState.messageId);
             }
         } catch (Exception e) {
-            log.warn("收集图像附件信息失败: sessionId={}, messageId={}", 
+            log.error("收集图像附件信息失败: sessionId={}, messageId={}", 
+                    sessionState.sessionId, sessionState.messageId, e);
+        }
+    }
+    
+    /**
+     * 更新已保存历史记录的附件信息
+     */
+    private void updateHistoryAttachments(SessionState sessionState) {
+        try {
+            log.info("尝试更新历史记录附件信息: sessionId={}, messageId={}", 
+                    sessionState.sessionId, sessionState.messageId);
+            
+            boolean hasUserMessage = StringUtils.hasText(sessionState.getUserMessage());
+            boolean hasAssistantMessage = StringUtils.hasText(sessionState.getAssistantMessage());
+            boolean hasImages = !sessionState.getGeneratedImages().isEmpty();
+            
+            log.info("更新附件条件检查: hasUserMessage={}, hasAssistantMessage={}, hasImages={}, imageCount={}", 
+                    hasUserMessage, hasAssistantMessage, hasImages, sessionState.getGeneratedImages().size());
+            
+            // 只要有图片就尝试更新（不依赖消息状态，因为消息可能已经保存并清理）
+            if (hasImages) {
+                
+                // 序列化图像附件信息
+                Map<String, Object> attachmentsData = Map.of("images", sessionState.getGeneratedImages());
+                String attachmentsJson = objectMapper.writeValueAsString(attachmentsData);
+                
+                log.info("准备更新数据库附件信息: historyId={}, attachmentsJson={}", 
+                        sessionState.sessionInfo.getHistoryId(), attachmentsJson);
+                
+                // 更新数据库中的附件信息
+                voiceChatService.updateHistoryAttachments(
+                        sessionState.sessionInfo.getHistoryId(),
+                        attachmentsJson
+                );
+                
+                log.info("更新历史记录附件信息成功: sessionId={}, messageId={}, imageCount={}", 
+                        sessionState.sessionId, sessionState.messageId, sessionState.getGeneratedImages().size());
+            } else {
+                log.info("不满足更新附件条件，跳过更新: sessionId={}, messageId={}", 
+                        sessionState.sessionId, sessionState.messageId);
+            }
+        } catch (Exception e) {
+            log.error("更新历史记录附件信息失败: sessionId={}, messageId={}", 
                     sessionState.sessionId, sessionState.messageId, e);
         }
     }
@@ -287,14 +354,22 @@ public class StreamingVoiceOrchestrator {
                     
                     // 序列化图像附件信息
                     String attachmentsJson = null;
+                    log.info("历史保存时检查图片附件: sessionId={}, messageId={}, imageCount={}", 
+                            sessionState.sessionId, sessionState.messageId, sessionState.getGeneratedImages().size());
+                    
                     if (!sessionState.getGeneratedImages().isEmpty()) {
                         try {
                             Map<String, Object> attachmentsData = Map.of("images", sessionState.getGeneratedImages());
                             attachmentsJson = objectMapper.writeValueAsString(attachmentsData);
+                            log.info("图像附件序列化成功: sessionId={}, messageId={}, attachmentsJson={}", 
+                                    sessionState.sessionId, sessionState.messageId, attachmentsJson);
                         } catch (JsonProcessingException e) {
-                            log.warn("序列化图像附件信息失败: sessionId={}, messageId={}", 
+                            log.error("序列化图像附件信息失败: sessionId={}, messageId={}", 
                                     sessionState.sessionId, sessionState.messageId, e);
                         }
+                    } else {
+                        log.info("历史保存时没有图片附件: sessionId={}, messageId={}", 
+                                sessionState.sessionId, sessionState.messageId);
                     }
                     
                     // 保存到数据库 (PostgreSQL)

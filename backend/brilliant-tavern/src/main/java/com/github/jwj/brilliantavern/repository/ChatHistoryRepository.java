@@ -99,4 +99,12 @@ public interface ChatHistoryRepository extends JpaRepository<ChatHistory, Long> 
     @Transactional
     @Query("UPDATE ChatHistory ch SET ch.title = :title WHERE ch.historyId = :historyId AND (ch.title IS NULL OR ch.title = '')")
     int updateHistoryTitle(@Param("historyId") UUID historyId, @Param("title") String title);
+    
+    /**
+     * 更新历史记录的附件信息（更新该historyId下角色为ASSISTANT的记录）
+     */
+    @Modifying
+    @Transactional
+    @Query("UPDATE ChatHistory ch SET ch.attachments = :attachments WHERE ch.historyId = :historyId AND ch.role = 'assistant'")
+    int updateHistoryAttachments(@Param("historyId") UUID historyId, @Param("attachments") String attachments);
 }
